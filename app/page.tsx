@@ -36,7 +36,8 @@ export default function Home() {
   const [people, setPeople] = useState(8);
   const [bottles, setBottles] = useState(3);
   const [arrival, setArrival] = useState("18:00");
-  const [submitted, setSubmitted] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewed, setReviewed] = useState(false);
 
   const afterCutoff = arrival > "18:30";
   const bottlePrice = zone === "pista" ? (afterCutoff ? 120 : 100) : afterCutoff ? 100 : 80;
@@ -79,9 +80,9 @@ export default function Home() {
           <button className="nav-item"><span className="nav-icon">◎</span>Reglas y zonas</button>
         </nav>
 
-        <div className="sync-card">
-          <div className="sync-row"><span className="status-dot" /> Fourvenues conectado</div>
-          <p>Última comprobación ahora</p>
+        <div className="sync-card test-sync">
+          <div className="sync-row"><span className="status-dot" /> Modo prueba activo</div>
+          <p>Sin envíos a Fourvenues</p>
         </div>
 
         <div className="profile">
@@ -94,8 +95,10 @@ export default function Home() {
       <section className="workspace">
         <header className="topbar">
           <div>
+            <div className="test-badge"><span /> Modo supervisado · prueba segura</div>
             <p className="eyebrow">Nueva reserva</p>
             <h1>Revisa. Ubica. Confirma.</h1>
+            <p className="test-description">Prepara una reserva completa y detente antes de crearla realmente.</p>
           </div>
           <div className="event-chip">
             <span className="event-date"><b>01</b>AGO</span>
@@ -186,20 +189,49 @@ export default function Home() {
           <div className="fv-logo">F<span>V</span></div>
           <div className="send-copy"><span>Destino</span><b>Fourvenues · TØTEM Punta Umbría</b></div>
           <div className="send-details"><span><small>Evento</small>01/08/2026</span><span><small>Zona</small>{zoneCopy[zone].label}</span><span><small>Mesa</small>{selectedTable}</span></div>
-          <button className="send-button" disabled={!capacityOk} onClick={() => setSubmitted(true)}>Crear reserva <span>→</span></button>
+          <button className="send-button" disabled={!capacityOk || !parsed} onClick={() => { setReviewed(false); setReviewOpen(true); }}>Preparar prueba <span>→</span></button>
         </section>
       </section>
 
-      {submitted && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="success-title">
-          <div className="success-modal">
-            <button className="modal-close" onClick={() => setSubmitted(false)} aria-label="Cerrar">×</button>
-            <div className="success-icon">✓</div>
-            <p className="eyebrow">Simulación completada</p>
-            <h2 id="success-title">La reserva está lista</h2>
-            <p>En la versión conectada, aquí se enviaría a Fourvenues con la mesa <b>{selectedTable}</b> y el adelanto de <b>{deposit} €</b>.</p>
-            <div className="modal-receipt"><span>Rafael Márquez Sánchez</span><strong>{price} €</strong></div>
-            <button className="modal-action" onClick={() => setSubmitted(false)}>Volver al preview</button>
+      {reviewOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="review-title">
+          <div className="review-modal">
+            <button className="modal-close" onClick={() => setReviewOpen(false)} aria-label="Cerrar">×</button>
+            <div className="review-header">
+              <span className="review-icon">◎</span>
+              <div><p className="eyebrow">Prueba supervisada</p><h2 id="review-title">Reserva preparada</h2></div>
+              <span className="safe-pill">No enviada</span>
+            </div>
+
+            <div className="check-list" aria-label="Comprobaciones realizadas">
+              <div><span>✓</span><p><b>Solicitud validada</b><small>8 campos reconocidos correctamente</small></p></div>
+              <div><span>✓</span><p><b>Evento localizado</b><small>01/08/2026 · YUGEN · GEMELIERS</small></p></div>
+              <div><span>✓</span><p><b>Zona y tarifa comprobadas</b><small>{zoneCopy[zone].label} · {price} € · adelanto {deposit} €</small></p></div>
+              <div><span>✓</span><p><b>Mesa compatible preparada</b><small>Mesa {selectedTable} · {people} personas · {bottles} botellas</small></p></div>
+              <div className="pending"><span>5</span><p><b>Pendiente de autorización</b><small>El test se detiene antes del envío real</small></p></div>
+            </div>
+
+            <div className="review-receipt">
+              <div className="receipt-person"><span>Cliente</span><b>Rafael Márquez Sánchez</b><small>617 882 780 · rafamarsan1996@gmail.com</small></div>
+              <div className="receipt-grid">
+                <p><span>Evento</span><b>YUGEN · GEMELIERS</b></p>
+                <p><span>Llegada</span><b>{arrival}</b></p>
+                <p><span>Ubicación</span><b>{zoneCopy[zone].label} · Mesa {selectedTable}</b></p>
+                <p><span>Personas / botellas</span><b>{people} / {bottles}</b></p>
+                <p><span>Precio</span><b>{price} €</b></p>
+                <p><span>Adelanto</span><b>{deposit} €</b></p>
+              </div>
+            </div>
+
+            <label className="review-check">
+              <input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />
+              <span>He revisado los datos, el precio y la mesa.</span>
+            </label>
+            <button className="blocked-action" disabled>
+              {reviewed ? "Fin del test · no se enviará a Fourvenues" : "Revisa y marca la confirmación"}
+            </button>
+            <p className="duplicate-note">Esta reserva ya existe en Fourvenues. El envío real permanece bloqueado para evitar un duplicado.</p>
+            <button className="modal-action secondary" onClick={() => setReviewOpen(false)}>Cerrar prueba y volver</button>
           </div>
         </div>
       )}

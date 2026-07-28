@@ -46,6 +46,9 @@ button { cursor: pointer; }
 .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; max-width: 1280px; margin: 0 auto; }
 .eyebrow { margin: 0 0 8px; color: var(--gold-dark); font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
 .topbar h1 { margin: 0; font-family: Georgia, serif; font-weight: 500; font-size: clamp(30px, 3vw, 44px); letter-spacing: -.035em; }
+.test-badge { width: fit-content; display: flex; align-items: center; gap: 7px; margin-bottom: 13px; padding: 7px 10px; border: 1px solid #dcc7a6; border-radius: 999px; color: #7f5b2d; background: #f4e8d5; font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.test-badge span { width: 7px; height: 7px; border-radius: 50%; background: #d08a2d; box-shadow: 0 0 0 4px rgba(208,138,45,.13); }
+.test-description { margin: 9px 0 0; color: #78828d; font-size: 10px; }
 .event-chip { min-width: 285px; display: grid; grid-template-columns: 47px 1fr auto; align-items: center; gap: 13px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.66); box-shadow: 0 6px 25px rgba(35,43,55,.04); }
 .event-date { display: grid; place-items: center; height: 44px; border-radius: 8px; color: #fff; background: var(--navy); font-size: 8px; line-height: 1; letter-spacing: .08em; }
 .event-date b { font-family: Georgia, serif; font-size: 20px; }
@@ -151,6 +154,8 @@ button { cursor: pointer; }
 .send-button:disabled { cursor: not-allowed; opacity: .45; }
 .send-button span { margin-left: 13px; }
 
+.test-sync .status-dot { background: #e0a24c; box-shadow: 0 0 0 4px rgba(224,162,76,.13); }
+
 .modal-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(9,22,39,.64); backdrop-filter: blur(7px); }
 .success-modal { position: relative; width: min(420px, 100%); padding: 34px; border-radius: 19px; color: var(--ink); background: #fbfaf7; text-align: center; box-shadow: 0 30px 80px rgba(0,0,0,.28); animation: modalIn .22s ease-out; }
 @keyframes modalIn { from { opacity: 0; transform: translateY(8px) scale(.98); } }
@@ -160,6 +165,34 @@ button { cursor: pointer; }
 .success-modal > p:not(.eyebrow) { margin: 12px 0 20px; color: #687381; font-size: 11px; line-height: 1.6; }
 .modal-receipt { padding: 13px 14px; display: flex; justify-content: space-between; border: 1px solid var(--line); border-radius: 10px; background: white; font-size: 10px; }
 .modal-action { width: 100%; margin-top: 13px; border: 0; border-radius: 9px; padding: 12px; color: white; background: var(--navy); font-size: 10px; font-weight: 700; }
+.review-modal { position: relative; width: min(610px, 100%); max-height: calc(100vh - 36px); overflow: auto; padding: 27px; border-radius: 19px; color: var(--ink); background: #fbfaf7; box-shadow: 0 30px 80px rgba(0,0,0,.28); animation: modalIn .22s ease-out; }
+.review-header { display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center; padding-right: 22px; }
+.review-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: #f4d49e; background: var(--navy); font-size: 21px; }
+.review-header h2 { margin: 0; font-family: Georgia, serif; font-size: 25px; font-weight: 600; }
+.safe-pill { padding: 6px 9px; border-radius: 999px; color: #815922; background: #f1e3ce; font-size: 8px; font-weight: 800; }
+.check-list { display: grid; margin: 20px 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: white; }
+.check-list > div { display: grid; grid-template-columns: 25px 1fr; gap: 9px; align-items: center; padding: 10px 12px; border-top: 1px solid #eee8de; }
+.check-list > div:first-child { border-top: 0; }
+.check-list > div > span { width: 21px; height: 21px; border-radius: 50%; display: grid; place-items: center; color: white; background: var(--green); font-size: 9px; font-weight: 800; }
+.check-list p, .check-list b, .check-list small { margin: 0; display: block; }
+.check-list b { font-size: 9px; }
+.check-list small { margin-top: 2px; color: #818a94; font-size: 8px; }
+.check-list .pending { background: #fbf5e9; }
+.check-list .pending > span { color: #fff; background: var(--gold); }
+.review-receipt { padding: 15px; border-radius: 12px; color: white; background: linear-gradient(135deg, #152b48, #0d1e34); }
+.receipt-person span, .receipt-person b, .receipt-person small { display: block; }
+.receipt-person span, .receipt-grid span { color: #91a0b4; font-size: 7px; text-transform: uppercase; letter-spacing: .08em; }
+.receipt-person b { margin-top: 4px; font-family: Georgia, serif; font-size: 15px; }
+.receipt-person small { margin-top: 3px; color: #b9c3d0; font-size: 8px; }
+.receipt-grid { display: grid; grid-template-columns: 1.5fr repeat(2, 1fr); gap: 12px; margin-top: 13px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.11); }
+.receipt-grid p { margin: 0; min-width: 0; }
+.receipt-grid span, .receipt-grid b { display: block; }
+.receipt-grid b { margin-top: 4px; overflow: hidden; font-size: 9px; white-space: nowrap; text-overflow: ellipsis; }
+.review-check { display: flex; align-items: center; gap: 9px; margin: 15px 0 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: white; color: #455163; font-size: 9px; font-weight: 650; cursor: pointer; }
+.review-check input { accent-color: var(--green); }
+.blocked-action { width: 100%; border: 0; border-radius: 9px; padding: 12px; color: #737a83; background: #e8e5df; font-size: 9px; font-weight: 800; cursor: not-allowed; }
+.duplicate-note { margin: 8px 4px 0; color: #95652d; font-size: 8px; line-height: 1.45; text-align: center; }
+.modal-action.secondary { margin-top: 10px; color: var(--ink); border: 1px solid var(--line); background: white; }
 
 @media (max-width: 1000px) {
   .app-shell { grid-template-columns: 82px minmax(0, 1fr); }
@@ -197,4 +230,8 @@ button { cursor: pointer; }
   .send-bar { grid-template-columns: 35px 1fr; }
   .send-details { grid-column: 1 / -1; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
   .send-button { grid-column: 1 / -1; }
+  .review-modal { padding: 21px 16px; }
+  .review-header { grid-template-columns: 40px 1fr; }
+  .safe-pill { grid-column: 2; width: fit-content; }
+  .receipt-grid { grid-template-columns: repeat(2, 1fr); }
 }
