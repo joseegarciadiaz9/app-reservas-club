@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 type Zone = "pinar" | "pista" | "jaima" | "lateral" | "front";
+type TableStatus = "available" | "internal" | "blocked";
 
 type BookingDraft = {
   date: string;
@@ -59,7 +60,14 @@ const tables: Record<Zone, string[]> = {
   front: ["F1", "F2", "F3", "F4", "F5", "F6"],
 };
 
-const unavailableTables = new Set(["204", "207", "106", "J3", "L2", "F4"]);
+const internalTables = new Set(["202", "205", "109", "J2", "L5", "F2"]);
+const blockedTables = new Set(["204", "207", "106", "J3", "L2", "F4"]);
+
+function tableStatus(table: string): TableStatus {
+  if (blockedTables.has(table)) return "blocked";
+  if (internalTables.has(table)) return "internal";
+  return "available";
+}
 
 function valueFrom(text: string, labels: string[]) {
   const clean = text.replace(/\*/g, "");
@@ -138,7 +146,8 @@ export default function Home() {
   const isConcert = eventForDate(draft.date) !== "Evento de TØTEM";
   const eventName = eventForDate(draft.date);
   const currentTables = useMemo(() => tables[draft.zone], [draft.zone]);
-  const availableCount = currentTables.filter((table) => !unavailableTables.has(table)).length;
+  const sellableCount = currentTables.filter((table) => tableStatus(table) !== "blocked").length;
+  const selectedTableStatus = tableStatus(selectedTable);
 
   const bottlePrice = draft.zone === "front"
     ? (afterCutoff ? 150 : 130)
@@ -163,7 +172,7 @@ export default function Home() {
 
   function chooseZone(nextZone: Zone) {
     updateDraft("zone", nextZone);
-    const firstAvailable = tables[nextZone].find((table) => !unavailableTables.has(table));
+    const firstAvailable = tables[nextZone].find((table) => tableStatus(table) !== "blocked");
     setSelectedTable(firstAvailable || tables[nextZone][0]);
   }
 
@@ -171,7 +180,7 @@ export default function Home() {
     const result = parseRequest(rawRequest, draft);
     setDraft(result.draft);
     setDetectedFields(result.detected);
-    const firstAvailable = tables[result.draft.zone].find((table) => !unavailableTables.has(table));
+    const firstAvailable = tables[result.draft.zone].find((table) => tableStatus(table) !== "blocked");
     setSelectedTable(firstAvailable || tables[result.draft.zone][0]);
     setParsed(true);
   }
@@ -259,7 +268,7 @@ export default function Home() {
           <section className="panel assignment-panel">
             <div className="panel-heading">
               <div><span className="panel-number">02</span><div><h2>Zona y mesa</h2><p>La zona detectada queda marcada para comprobarla.</p></div></div>
-              <span className="availability"><i /> {availableCount} libres</span>
+              <span className="availability"><i /> {sellableCount} vendibles</span>
             </div>
 
             <div className="zone-selector five-zones">
@@ -274,19 +283,21 @@ export default function Home() {
             </div>
 
             <div className="rule-note">
-              <span>✓</span><div><b>Zona comprobada</b><p>{draft.zone === "jaima" ? "Jaima mantiene un consumo mínimo de 300 € y no se mezcla con Pinar." : draft.zone === "front" || draft.zone === "lateral" ? "Zona disponible únicamente en la configuración de concierto." : `Se buscarán únicamente mesas ${zoneCopy[draft.zone].subtitle.toLowerCase()}.`}</p></div>
+              <span>✓</span><div><b>Regla de venta interna aplicada</b><p>Los puntos rojos indican mesas ocultas en la web pero vendibles por RRPP. Las rayas rojas indican mesas bloqueadas para todo el mundo.</p></div>
             </div>
 
-            <div className="table-heading"><div><h3>Elige una mesa</h3><p>Capacidad configurada: 9 personas</p></div><div className="legend"><span><i className="free" />Libre</span><span><i className="busy" />Ocupada</span></div></div>
+            <div className="table-heading"><div><h3>Elige una mesa</h3><p>Capacidad configurada: 9 personas</p></div><div className="legend"><span><i className="free" />Pública</span><span><i className="internal" />Solo RRPP</span><span><i className="busy" />Bloqueada</span></div></div>
             <div className="table-grid">
               {currentTables.map((table) => {
-                const busy = unavailableTables.has(table);
-                return <button key={table} disabled={busy} onClick={() => setSelectedTable(table)} className={`table-seat ${selectedTable === table ? "selected" : ""} ${busy ? "busy" : ""}`}><b>{table}</b><span>{busy ? "Ocupada" : "9 pax"}</span></button>;
+                const status = tableStatus(table);
+                const blocked = status === "blocked";
+                const statusLabel = status === "internal" ? "Solo RRPP" : blocked ? "No vendible" : "9 pax";
+                return <button key={table} disabled={blocked} onClick={() => setSelectedTable(table)} className={`table-seat ${selectedTable === table ? "selected" : ""} ${status}`} aria-label={`Mesa ${table}, ${statusLabel}`}><b>{table}</b><span>{statusLabel}</span></button>;
               })}
             </div>
 
             <div className="summary-card">
-              <div className="summary-top"><div><span className="mini-label">Resumen de Fourvenues</span><h3>Mesa {selectedTable} · {zoneCopy[draft.zone].label}</h3></div><span className="verified">✓ Compatible</span></div>
+              <div className="summary-top"><div><span className="mini-label">Resumen de Fourvenues</span><h3>Mesa {selectedTable} · {zoneCopy[draft.zone].label}</h3></div><span className={selectedTableStatus === "internal" ? "verified internal-badge" : "verified"}>{selectedTableStatus === "internal" ? "● Solo RRPP" : "✓ Pública"}</span></div>
               <div className="summary-stats">
                 <div><span>Personas</span><b>{draft.people}</b></div>
                 <div><span>Botellas</span><b>{draft.bottles}</b></div>
@@ -321,7 +332,7 @@ export default function Home() {
               <div><span>✓</span><p><b>Solicitud validada</b><small>{detectedFields} campos reconocidos y editables</small></p></div>
               <div><span>✓</span><p><b>Evento localizado</b><small>{draft.date} · {eventName}</small></p></div>
               <div><span>✓</span><p><b>Zona y tarifa comprobadas</b><small>{zoneCopy[draft.zone].label} · {price} € · adelanto {deposit} €</small></p></div>
-              <div><span>✓</span><p><b>Mesa compatible preparada</b><small>Mesa {selectedTable} · {draft.people} personas · {draft.bottles} botellas</small></p></div>
+              <div><span>✓</span><p><b>Mesa compatible preparada</b><small>Mesa {selectedTable} · {selectedTableStatus === "internal" ? "venta interna RRPP" : "venta pública"} · {draft.people} personas</small></p></div>
               <div className="pending"><span>5</span><p><b>Conector Alpha pendiente</b><small>Al recibir la API key, este paso creará el booking en Fourvenues</small></p></div>
             </div>
 
