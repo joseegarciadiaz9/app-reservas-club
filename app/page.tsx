@@ -62,11 +62,28 @@ const tables: Record<Zone, string[]> = {
 
 const internalTables = new Set(["202", "205", "109", "J2", "L5", "F2"]);
 const blockedTables = new Set(["204", "207", "106", "J3", "L2", "F4"]);
+const tableCapacity = 9;
 
 function tableStatus(table: string): TableStatus {
   if (blockedTables.has(table)) return "blocked";
   if (internalTables.has(table)) return "internal";
   return "available";
+}
+
+function suggestedCombination(zone: Zone, people: number, preferredTable?: string) {
+  const zoneTables = tables[zone];
+  const tablesNeeded = Math.max(1, Math.ceil(people / tableCapacity));
+  const preferredIndex = preferredTable ? zoneTables.indexOf(preferredTable) : -1;
+  const startIndexes = [preferredIndex, ...zoneTables.map((_, index) => index)]
+    .filter((index, position, values) => index >= 0 && values.indexOf(index) === position);
+
+  for (const startIndex of startIndexes) {
+    const group = zoneTables.slice(startIndex, startIndex + tablesNeeded);
+    if (group.length === tablesNeeded && group.every((table) => tableStatus(table) !== "blocked")) return group;
+  }
+
+  const firstSellable = zoneTables.find((table) => tableStatus(table) !== "blocked");
+  return firstSellable ? [firstSellable] : [];
 }
 
 function valueFrom(text: string, labels: string[]) {
@@ -138,7 +155,8 @@ export default function Home() {
   const [draft, setDraft] = useState<BookingDraft>(defaultDraft);
   const [detectedFields, setDetectedFields] = useState(8);
   const [parsed, setParsed] = useState(true);
-  const [selectedTable, setSelectedTable] = useState("201");
+  const [selectedTables, setSelectedTables] = useState<string[]>(["201"]);
+  const [combineMode, setCombineMode] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewed, setReviewed] = useState(false);
 
@@ -147,7 +165,11 @@ export default function Home() {
   const eventName = eventForDate(draft.date);
   const currentTables = useMemo(() => tables[draft.zone], [draft.zone]);
   const sellableCount = currentTables.filter((table) => tableStatus(table) !== "blocked").length;
-  const selectedTableStatus = tableStatus(selectedTable);
+  const selectedTablesLabel = selectedTables.join(" + ");
+  const combinationUsesInternal = selectedTables.some((table) => tableStatus(table) === "internal");
+  const tablesNeeded = Math.max(1, Math.ceil(draft.people / tableCapacity));
+  const selectedTableCapacity = selectedTables.length * tableCapacity;
+  const tablesCapacityOk = selectedTableCapacity >= draft.people;
 
   const bottlePrice = draft.zone === "front"
     ? (afterCutoff ? 150 : 130)
@@ -163,7 +185,7 @@ export default function Home() {
   const price = draft.zone === "jaima" ? Math.max(300, standardPrice) : standardPrice;
   const deposit = Math.round(price / 2);
   const maxCapacity = draft.bottles * 4;
-  const capacityOk = draft.people <= maxCapacity;
+  const bottleCapacityOk = draft.people <= maxCapacity;
   const requiredFieldsOk = Boolean(draft.date && draft.fullName && draft.email && draft.people && draft.bottles);
 
   function updateDraft<K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) {
@@ -172,16 +194,58 @@ export default function Home() {
 
   function chooseZone(nextZone: Zone) {
     updateDraft("zone", nextZone);
-    const firstAvailable = tables[nextZone].find((table) => tableStatus(table) !== "blocked");
-    setSelectedTable(firstAvailable || tables[nextZone][0]);
+    const shouldCombine = draft.people > tableCapacity;
+    setCombineMode(shouldCombine);
+    setSelectedTables(suggestedCombination(nextZone, draft.people));
+  }
+
+  function updatePeople(people: number) {
+    updateDraft("people", people);
+    const shouldCombine = people > tableCapacity;
+    setCombineMode(shouldCombine);
+    setSelectedTables(suggestedCombination(draft.zone, people, selectedTables[0]));
+  }
+
+  function toggleCombineMode() {
+    const nextMode = !combineMode;
+    setCombineMode(nextMode);
+    if (nextMode) setSelectedTables(suggestedCombination(draft.zone, draft.people, selectedTables[0]));
+    else setSelectedTables(selectedTables.slice(0, 1));
+  }
+
+  function selectTable(table: string) {
+    if (tableStatus(table) === "blocked") return;
+    if (!combineMode) {
+      setSelectedTables([table]);
+      return;
+    }
+
+    const tableIndex = currentTables.indexOf(table);
+    const selectedIndexes = selectedTables.map((item) => currentTables.indexOf(item)).sort((a, b) => a - b);
+    const isSelected = selectedTables.includes(table);
+
+    if (isSelected) {
+      if (selectedTables.length === 1) return;
+      const isEdge = tableIndex === selectedIndexes[0] || tableIndex === selectedIndexes[selectedIndexes.length - 1];
+      if (isEdge) setSelectedTables((current) => current.filter((item) => item !== table));
+      return;
+    }
+
+    const isAdjacent = tableIndex === selectedIndexes[0] - 1 || tableIndex === selectedIndexes[selectedIndexes.length - 1] + 1;
+    if (isAdjacent) {
+      setSelectedTables((current) => [...current, table].sort((a, b) => currentTables.indexOf(a) - currentTables.indexOf(b)));
+    } else {
+      setSelectedTables([table]);
+    }
   }
 
   function analyzeRequest() {
     const result = parseRequest(rawRequest, draft);
     setDraft(result.draft);
     setDetectedFields(result.detected);
-    const firstAvailable = tables[result.draft.zone].find((table) => tableStatus(table) !== "blocked");
-    setSelectedTable(firstAvailable || tables[result.draft.zone][0]);
+    const shouldCombine = result.draft.people > tableCapacity;
+    setCombineMode(shouldCombine);
+    setSelectedTables(suggestedCombination(result.draft.zone, result.draft.people));
     setParsed(true);
   }
 
@@ -255,7 +319,7 @@ export default function Home() {
                 <label className="field wide"><span>Nombre y apellidos</span><input value={draft.fullName} onChange={(e) => updateDraft("fullName", e.target.value)} /></label>
                 <label className="field"><span>Fecha</span><input value={draft.date} onChange={(e) => updateDraft("date", normalizeDate(e.target.value))} /></label>
                 <label className="field"><span>Hora de llegada</span><input type="time" value={draft.arrival} onChange={(e) => updateDraft("arrival", e.target.value)} /></label>
-                <label className="field"><span>Personas</span><input type="number" min="1" value={draft.people} onChange={(e) => updateDraft("people", Number(e.target.value))} /></label>
+                <label className="field"><span>Personas</span><input type="number" min="1" value={draft.people} onChange={(e) => updatePeople(Number(e.target.value))} /></label>
                 <label className="field"><span>Botellas</span><input type="number" min="1" value={draft.bottles} onChange={(e) => updateDraft("bottles", Number(e.target.value))} /></label>
                 <label className="field"><span>Teléfono</span><input value={draft.phone} onChange={(e) => updateDraft("phone", e.target.value)} /></label>
                 <label className="field"><span>Correo electrónico</span><input type="email" value={draft.email} onChange={(e) => updateDraft("email", e.target.value)} /></label>
@@ -286,25 +350,34 @@ export default function Home() {
               <span>✓</span><div><b>Regla de venta interna aplicada</b><p>Los puntos rojos indican mesas ocultas en la web pero vendibles por RRPP. Las rayas rojas indican mesas bloqueadas para todo el mundo.</p></div>
             </div>
 
-            <div className="table-heading"><div><h3>Elige una mesa</h3><p>Capacidad configurada: 9 personas</p></div><div className="legend"><span><i className="free" />Pública</span><span><i className="internal" />Solo RRPP</span><span><i className="busy" />Bloqueada</span></div></div>
+            <div className="table-heading"><div><h3>Elige una mesa</h3><p>Capacidad configurada: {tableCapacity} personas por mesa</p></div><div className="legend"><span><i className="free" />Pública</span><span><i className="internal" />Solo RRPP</span><span><i className="busy" />Bloqueada</span></div></div>
+            <div className={`combine-control ${draft.people > tableCapacity ? "recommended" : ""}`}>
+              <button type="button" className={combineMode ? "combine-button active" : "combine-button"} onClick={toggleCombineMode} aria-pressed={combineMode}>
+                <span>⇄</span> Combinar mesas
+              </button>
+              <p>{draft.people > tableCapacity ? `${draft.people} personas requieren al menos ${tablesNeeded} mesas contiguas.` : combineMode ? "Selecciona una mesa vecina para añadirla a la combinación." : "Actívalo para reservar varias mesas contiguas juntas."}</p>
+              {combineMode && <button type="button" className="suggest-button" onClick={() => setSelectedTables(suggestedCombination(draft.zone, draft.people, selectedTables[0]))}>Aplicar sugerencia</button>}
+            </div>
             <div className="table-grid">
               {currentTables.map((table) => {
                 const status = tableStatus(table);
                 const blocked = status === "blocked";
-                const statusLabel = status === "internal" ? "Solo RRPP" : blocked ? "No vendible" : "9 pax";
-                return <button key={table} disabled={blocked} onClick={() => setSelectedTable(table)} className={`table-seat ${selectedTable === table ? "selected" : ""} ${status}`} aria-label={`Mesa ${table}, ${statusLabel}`}><b>{table}</b><span>{statusLabel}</span></button>;
+                const selected = selectedTables.includes(table);
+                const statusLabel = selected && selectedTables.length > 1 ? "Combinada" : status === "internal" ? "Solo RRPP" : blocked ? "No vendible" : `${tableCapacity} pax`;
+                return <button key={table} disabled={blocked} onClick={() => selectTable(table)} className={`table-seat ${selected ? "selected" : ""} ${selected && selectedTables.length > 1 ? "combined" : ""} ${status}`} aria-label={`Mesa ${table}, ${statusLabel}`} aria-pressed={selected}><b>{table}</b><span>{statusLabel}</span></button>;
               })}
             </div>
 
             <div className="summary-card">
-              <div className="summary-top"><div><span className="mini-label">Resumen de Fourvenues</span><h3>Mesa {selectedTable} · {zoneCopy[draft.zone].label}</h3></div><span className={selectedTableStatus === "internal" ? "verified internal-badge" : "verified"}>{selectedTableStatus === "internal" ? "● Solo RRPP" : "✓ Pública"}</span></div>
+              <div className="summary-top"><div><span className="mini-label">Resumen de Fourvenues</span><h3>{selectedTables.length > 1 ? "Mesas" : "Mesa"} {selectedTablesLabel} · {zoneCopy[draft.zone].label}</h3></div><span className={combinationUsesInternal ? "verified internal-badge" : "verified"}>{selectedTables.length > 1 ? `⇄ ${selectedTables.length} combinadas` : combinationUsesInternal ? "● Solo RRPP" : "✓ Pública"}</span></div>
               <div className="summary-stats">
                 <div><span>Personas</span><b>{draft.people}</b></div>
-                <div><span>Botellas</span><b>{draft.bottles}</b></div>
+                <div><span>Capacidad mesas</span><b>{selectedTableCapacity} pax</b></div>
                 <div><span>Precio estimado</span><b>{price} €</b></div>
                 <div><span>Adelanto</span><b>{deposit} €</b></div>
               </div>
-              {!capacityOk && <p className="warning">Se permiten hasta {maxCapacity} personas con {draft.bottles} botella{draft.bottles === 1 ? "" : "s"}. Revisa personas o botellas.</p>}
+              {!tablesCapacityOk && <p className="warning">Faltan mesas: selecciona {tablesNeeded} mesas contiguas para alojar a {draft.people} personas.</p>}
+              {!bottleCapacityOk && <p className="warning">Se permiten hasta {maxCapacity} personas con {draft.bottles} botella{draft.bottles === 1 ? "" : "s"}. Revisa personas o botellas.</p>}
               {isConcert && <p className="concert-note">La reserva de botella no incluye la entrada del concierto.</p>}
             </div>
           </section>
@@ -313,8 +386,8 @@ export default function Home() {
         <section className="send-bar">
           <div className="fv-logo">F<span>V</span></div>
           <div className="send-copy"><span>Destino</span><b>Fourvenues · TØTEM Punta Umbría</b></div>
-          <div className="send-details"><span><small>Evento</small>{draft.date}</span><span><small>Zona</small>{zoneCopy[draft.zone].label}</span><span><small>Mesa</small>{selectedTable}</span></div>
-          <button className="send-button" disabled={!capacityOk || !parsed || !requiredFieldsOk} onClick={() => { setReviewed(false); setReviewOpen(true); }}>Revisar antes de crear <span>→</span></button>
+          <div className="send-details"><span><small>Evento</small>{draft.date}</span><span><small>Zona</small>{zoneCopy[draft.zone].label}</span><span><small>{selectedTables.length > 1 ? "Mesas" : "Mesa"}</small>{selectedTablesLabel}</span></div>
+          <button className="send-button" disabled={!bottleCapacityOk || !tablesCapacityOk || !parsed || !requiredFieldsOk} onClick={() => { setReviewed(false); setReviewOpen(true); }}>Revisar antes de crear <span>→</span></button>
         </section>
       </section>
 
@@ -332,7 +405,7 @@ export default function Home() {
               <div><span>✓</span><p><b>Solicitud validada</b><small>{detectedFields} campos reconocidos y editables</small></p></div>
               <div><span>✓</span><p><b>Evento localizado</b><small>{draft.date} · {eventName}</small></p></div>
               <div><span>✓</span><p><b>Zona y tarifa comprobadas</b><small>{zoneCopy[draft.zone].label} · {price} € · adelanto {deposit} €</small></p></div>
-              <div><span>✓</span><p><b>Mesa compatible preparada</b><small>Mesa {selectedTable} · {selectedTableStatus === "internal" ? "venta interna RRPP" : "venta pública"} · {draft.people} personas</small></p></div>
+              <div><span>✓</span><p><b>{selectedTables.length > 1 ? "Mesas combinadas preparadas" : "Mesa compatible preparada"}</b><small>{selectedTables.length > 1 ? `Mesas ${selectedTablesLabel}` : `Mesa ${selectedTablesLabel}`} · {combinationUsesInternal ? "incluye venta interna RRPP" : "venta pública"} · {draft.people} personas</small></p></div>
               <div className="pending"><span>5</span><p><b>Conector Alpha pendiente</b><small>Al recibir la API key, este paso creará el booking en Fourvenues</small></p></div>
             </div>
 
@@ -341,7 +414,7 @@ export default function Home() {
               <div className="receipt-grid">
                 <p><span>Evento</span><b>{eventName}</b></p>
                 <p><span>Llegada</span><b>{draft.arrival || "Sin hora"}</b></p>
-                <p><span>Ubicación</span><b>{zoneCopy[draft.zone].label} · Mesa {selectedTable}</b></p>
+                <p><span>Ubicación</span><b>{zoneCopy[draft.zone].label} · {selectedTables.length > 1 ? "Mesas" : "Mesa"} {selectedTablesLabel}</b></p>
                 <p><span>Personas / botellas</span><b>{draft.people} / {draft.bottles}</b></p>
                 <p><span>Precio / adelanto</span><b>{price} € / {deposit} €</b></p>
                 <p><span>Referente</span><b>{draft.referral}</b></p>

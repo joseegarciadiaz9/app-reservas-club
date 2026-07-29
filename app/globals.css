@@ -121,12 +121,21 @@ button { cursor: pointer; }
 .legend .free { border: 1px solid #c6a878; background: #fff; }
 .legend .internal { background-color: #fff7f2; background-image: radial-gradient(#c34d42 1.2px, transparent 1.2px); background-size: 4px 4px; }
 .legend .busy { background-color: #f7eeec; background-image: repeating-linear-gradient(135deg, #bd3f38 0 1px, transparent 1px 4px); }
+.combine-control { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; margin: 10px 0; padding: 9px 10px; border: 1px solid #e0d8cc; border-radius: 10px; background: #faf8f3; }
+.combine-control.recommended { border-color: #d8b77f; background: #fbf3e5; box-shadow: inset 3px 0 #c6914c; }
+.combine-control p { color: #7c858f; font-size: 8px; line-height: 1.4; }
+.combine-button, .suggest-button { border: 1px solid #d5c7b1; border-radius: 8px; padding: 7px 9px; color: #536070; background: #fff; font-size: 8px; font-weight: 800; white-space: nowrap; }
+.combine-button span { margin-right: 4px; color: #a87538; font-size: 12px; }
+.combine-button.active { border-color: var(--navy); color: #fff; background: var(--navy); }
+.combine-button.active span { color: #f1c984; }
+.suggest-button { border: 0; color: #865a25; background: #efdfc5; }
 .table-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
 .table-seat { min-width: 0; height: 49px; border: 1px solid #ddd6ca; border-radius: 9px; display: grid; place-items: center; align-content: center; gap: 2px; color: #334052; background: #fff; }
 .table-seat:hover { border-color: #b58a51; transform: translateY(-1px); }
 .table-seat b { font-size: 10px; }
 .table-seat span { color: #9aa0a6; font-size: 6px; }
 .table-seat.selected { color: white; border-color: var(--navy); background: var(--navy); box-shadow: 0 6px 14px rgba(16,35,63,.18); }
+.table-seat.selected.combined { border-color: #e2b568; box-shadow: 0 0 0 2px rgba(226,181,104,.28), 0 6px 14px rgba(16,35,63,.18); }
 .table-seat.selected span { color: #cfd7e1; }
 .table-seat.internal { border-color: #d69a8d; background-color: #fff8f4; background-image: radial-gradient(rgba(190,67,58,.38) 1px, transparent 1px); background-size: 5px 5px; }
 .table-seat.internal:not(.selected) span { color: #9e4e46; font-weight: 700; }
@@ -240,6 +249,8 @@ button { cursor: pointer; }
   .zone-selector { grid-template-columns: 1fr; }
   .zone-selector.five-zones { grid-template-columns: 1fr; }
   .table-grid { grid-template-columns: repeat(3, 1fr); }
+  .combine-control { grid-template-columns: 1fr auto; }
+  .combine-control p { grid-column: 1 / -1; grid-row: 2; }
   .send-bar { grid-template-columns: 35px 1fr; }
   .send-details { grid-column: 1 / -1; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
   .send-button { grid-column: 1 / -1; }
