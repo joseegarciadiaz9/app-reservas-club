@@ -31,6 +31,19 @@ const initialRequest = `*TØTEM*
 *Hora de llegada:* 18:00
 *Nº de botellas:* 3`;
 
+const largeGroupRequest = `*TØTEM*
+*Formulario de reserva*
+
+*Fecha:* 01/08/2026
+*Un nombre y apellidos:* Grupo de prueba TØTEM
+*Nº de personas:* 20
+*Teléfono:* 600000000
+*Correo Electrónico:* prueba@totem.es
+*Zona preferida:* Pinar
+*Hora de llegada:* 18:00
+*Nº de botellas:* 5
+*Observaciones:* Prueba interna de mesas combinadas`;
+
 const defaultDraft: BookingDraft = {
   date: "01/08/2026",
   fullName: "Rafael Márquez Sánchez",
@@ -249,6 +262,17 @@ export default function Home() {
     setParsed(true);
   }
 
+  function loadLargeGroupDemo() {
+    const result = parseRequest(largeGroupRequest, draft);
+    setRawRequest(largeGroupRequest);
+    setDraft(result.draft);
+    setDetectedFields(result.detected);
+    setCombineMode(true);
+    setSelectedTables(suggestedCombination(result.draft.zone, result.draft.people));
+    setParsed(true);
+    setReviewOpen(false);
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -350,7 +374,7 @@ export default function Home() {
               <span>✓</span><div><b>Regla de venta interna aplicada</b><p>Los puntos rojos indican mesas ocultas en la web pero vendibles por RRPP. Las rayas rojas indican mesas bloqueadas para todo el mundo.</p></div>
             </div>
 
-            <div className="table-heading"><div><h3>Elige una mesa</h3><p>Capacidad configurada: {tableCapacity} personas por mesa</p></div><div className="legend"><span><i className="free" />Pública</span><span><i className="internal" />Solo RRPP</span><span><i className="busy" />Bloqueada</span></div></div>
+            <div className="table-heading"><div><h3>Elige una mesa</h3><p>Capacidad configurada: {tableCapacity} personas por mesa</p></div><div className="table-heading-actions"><button type="button" className="demo-button" onClick={loadLargeGroupDemo}><span>20</span> Probar grupo</button><div className="legend"><span><i className="free" />Pública</span><span><i className="internal" />Solo RRPP</span><span><i className="busy" />Bloqueada</span></div></div></div>
             <div className={`combine-control ${draft.people > tableCapacity ? "recommended" : ""}`}>
               <button type="button" className={combineMode ? "combine-button active" : "combine-button"} onClick={toggleCombineMode} aria-pressed={combineMode}>
                 <span>⇄</span> Combinar mesas

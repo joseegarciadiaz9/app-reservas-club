@@ -115,6 +115,10 @@ button { cursor: pointer; }
 .table-heading { display: flex; justify-content: space-between; gap: 12px; margin: 18px 0 10px; }
 .table-heading h3 { font-size: 11px; }
 .table-heading p { margin-top: 3px; color: #8a929c; font-size: 8px; }
+.table-heading-actions { display: flex; align-items: center; gap: 10px; }
+.demo-button { display: flex; align-items: center; gap: 6px; border: 1px solid #dcc59f; border-radius: 999px; padding: 5px 8px 5px 5px; color: #805827; background: #fbf3e5; font-size: 7px; font-weight: 800; }
+.demo-button span { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--gold); font-size: 7px; }
+.demo-button:hover { border-color: #b88a4f; background: #f7e9d2; }
 .legend { display: flex; align-items: center; gap: 9px; color: #8a929c; font-size: 7px; }
 .legend span { display: flex; align-items: center; gap: 4px; }
 .legend i { width: 6px; height: 6px; border-radius: 2px; }
@@ -249,6 +253,8 @@ button { cursor: pointer; }
   .zone-selector { grid-template-columns: 1fr; }
   .zone-selector.five-zones { grid-template-columns: 1fr; }
   .table-grid { grid-template-columns: repeat(3, 1fr); }
+  .table-heading { display: block; }
+  .table-heading-actions { margin-top: 9px; justify-content: space-between; }
   .combine-control { grid-template-columns: 1fr auto; }
   .combine-control p { grid-column: 1 / -1; grid-row: 2; }
   .send-bar { grid-template-columns: 35px 1fr; }
