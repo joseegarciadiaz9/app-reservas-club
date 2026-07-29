@@ -16,7 +16,7 @@
 
 html, body { margin: 0; min-height: 100%; background: var(--paper); color: var(--ink); }
 body { font-family: var(--font-geist-sans), Arial, sans-serif; }
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 238px minmax(0, 1fr); background: var(--paper); }
@@ -93,10 +93,12 @@ button { cursor: pointer; }
 .field { display: grid; gap: 5px; }
 .field.wide { grid-column: 1 / -1; }
 .field span { color: #717b87; font-size: 8px; font-weight: 700; }
-.field input { width: 100%; min-width: 0; border: 1px solid #e2dbd0; border-radius: 8px; padding: 9px 10px; outline: none; color: #263448; background: #fff; font-size: 9px; }
-.field input:focus { border-color: #c19760; }
+.field input, .field textarea, .field select { width: 100%; min-width: 0; border: 1px solid #e2dbd0; border-radius: 8px; padding: 9px 10px; outline: none; color: #263448; background: #fff; font-size: 9px; }
+.field textarea { min-height: 58px; resize: vertical; line-height: 1.45; }
+.field input:focus, .field textarea:focus, .field select:focus { border-color: #c19760; }
 
 .zone-selector { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.zone-selector.five-zones { grid-template-columns: repeat(3, 1fr); }
 .zone-card { position: relative; min-width: 0; border: 1px solid #ddd6cb; border-radius: 10px; padding: 11px 8px 10px 28px; color: var(--ink); background: #fff; text-align: left; }
 .zone-card:hover { border-color: #c6a778; }
 .zone-card.selected { border-color: #b1844c; background: #fbf5e9; box-shadow: inset 0 0 0 1px #b1844c; }
@@ -139,6 +141,7 @@ button { cursor: pointer; }
 .summary-stats span { color: #91a0b4; font-size: 7px; }
 .summary-stats b { margin-top: 4px; font-size: 11px; }
 .warning { margin-top: 9px !important; padding: 7px 9px; border-radius: 6px; color: #ffdfb1; background: rgba(181,110,41,.18); font-size: 8px; }
+.concert-note { margin-top: 8px !important; color: #aeb9c8; font-size: 7px; }
 
 .send-bar { max-width: 1280px; margin: 18px auto 0; padding: 14px 16px; display: grid; grid-template-columns: 35px 1fr auto auto; gap: 13px; align-items: center; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.78); box-shadow: 0 10px 30px rgba(42,46,54,.05); }
 .fv-logo { width: 35px; height: 35px; border-radius: 9px; display: grid; place-items: center; color: white; background: #1b6f5a; font-weight: 900; font-size: 11px; }
@@ -188,6 +191,10 @@ button { cursor: pointer; }
 .receipt-grid p { margin: 0; min-width: 0; }
 .receipt-grid span, .receipt-grid b { display: block; }
 .receipt-grid b { margin-top: 4px; overflow: hidden; font-size: 9px; white-space: nowrap; text-overflow: ellipsis; }
+.receipt-observations { margin-top: 12px; padding-top: 11px; border-top: 1px solid rgba(255,255,255,.11); }
+.receipt-observations span, .receipt-observations b { display: block; }
+.receipt-observations span { color: #91a0b4; font-size: 7px; text-transform: uppercase; letter-spacing: .08em; }
+.receipt-observations b { margin-top: 5px; color: #f1f4f7; font-size: 9px; line-height: 1.45; }
 .review-check { display: flex; align-items: center; gap: 9px; margin: 15px 0 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 10px; background: white; color: #455163; font-size: 9px; font-weight: 650; cursor: pointer; }
 .review-check input { accent-color: var(--green); }
 .blocked-action { width: 100%; border: 0; border-radius: 9px; padding: 12px; color: #737a83; background: #e8e5df; font-size: 9px; font-weight: 800; cursor: not-allowed; }
@@ -226,6 +233,7 @@ button { cursor: pointer; }
   .panel-heading { display: block; }
   .panel-heading > span { display: inline-block; margin: 10px 0 0 38px; }
   .zone-selector { grid-template-columns: 1fr; }
+  .zone-selector.five-zones { grid-template-columns: 1fr; }
   .table-grid { grid-template-columns: repeat(3, 1fr); }
   .send-bar { grid-template-columns: 35px 1fr; }
   .send-details { grid-column: 1 / -1; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }

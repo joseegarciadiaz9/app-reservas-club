@@ -7,14 +7,17 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://totem-reservas-jose.josegarciadiaz9.chatgpt.site"),
-  title: "TØTEM Reservas · Modo supervisado",
-  description: "Prueba segura para revisar, ubicar y preparar una reserva antes de enviarla a Fourvenues.",
+  title: "TØTEM Reservas · Gestión interna",
+  description: "Herramienta interna para analizar solicitudes, comprobar mesas y crear reservas en Fourvenues.",
   openGraph: {
-    title: "TØTEM Reservas · Modo supervisado",
-    description: "Revisa, ubica y confirma sin crear reservas reales.",
-    images: ["/og.png"],
+    title: "TØTEM Reservas · Gestión interna",
+    description: "Del formulario del RRPP a la mesa correcta en Fourvenues.",
+    images: [{ url: "https://totem-reservas-jose.josegarciadiaz9.chatgpt.site/og.png", width: 1536, height: 1024 }],
   },
-  twitter: { card: "summary_large_image", images: ["/og.png"] },
+  twitter: {
+    card: "summary_large_image",
+    images: ["https://totem-reservas-jose.josegarciadiaz9.chatgpt.site/og.png"],
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
