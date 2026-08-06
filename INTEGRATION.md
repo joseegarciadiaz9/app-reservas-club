@@ -26,7 +26,7 @@ Copia `.env.example` a `.env` (o `.dev.vars` para Wrangler) y rellena:
 
 | Variable | Descripción |
 | --- | --- |
-| `FOURVENUES_API_KEY` | Clave de **Channel Manager con permisos de Booking** (Developer Portal). |
+| `FOURVENUES_API_KEY` | Clave de **Channel Manager** (Developer Portal). No hay permiso "Booking": se pide con `all:read` + `all:write` (o permisos granulares). |
 | `FOURVENUES_ENV` | `alpha` (pruebas) o `prod`. |
 | `FOURVENUES_BASE_URL` | Opcional, sobreescribe la base URL. |
 | `FOURVENUES_CHANNEL_ID` | Opcional, `external_channel_id` por defecto. |
@@ -68,9 +68,20 @@ Confirmado por Fourvenues:
 
 - Usar la organización existente "Live Punta Umbría" en Alpha; para producción, cambiar
   endpoints y clave.
-- Las claves se generan desde el **Developer Portal** eligiendo el tipo (Channel Manager / Booking).
+- Las claves se piden desde el **Developer Portal** eligiendo el tipo (Integrations API /
+  Channel manager API). El tipo es **inmutable** una vez creada la clave.
+- **No hay un permiso "Booking"**: el alcance se define con permisos granulares (Auth,
+  Event, List, Location, Organization, Ticket Rate, Ticket, Payment, Webhook…) o con los
+  globales **Read: All / Write: All**.
+- La clave **no se genera al instante**: se **solicita** y queda en estado "Solicitada"
+  (valor "Pendiente") hasta que **Fourvenues la aprueba**.
 - El **referente** no es asignable por reserva vía API (queda el canal de ventas).
 - Hora de llegada y similares van en el campo de **notas**.
+
+Solicitud en curso (Alpha):
+
+- Clave **Channel Manager** "App Reservas TOTEM - RRPP (Alpha)", `all:read` + `all:write`,
+  caducidad 06/08/2027, estado **Solicitada** (pendiente de aprobación de Fourvenues).
 
 ## Siguiente paso al recibir la API key
 

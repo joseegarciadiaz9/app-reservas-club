@@ -54,7 +54,9 @@ Inacio (inacio.baldovino@fourvenues.com), Álvaro (alvaro.aviles@fourvenues.com)
 
 - Vía correcta: **Channel Manager API con permisos de Booking** (`/bookings/checkout` y `/bookings/request`).
 - Usar la organización **existente "Live Punta Umbría"** en Alpha. Para producción: pedir claves PRO y cambiar endpoints.
-- Las claves se generan **uno mismo desde el Developer Portal** (eligiendo el tipo de clave).
+- Las claves se **solicitan** desde el Developer Portal (eligiendo el tipo, que es
+  inmutable). **No hay permiso "Booking"**: el alcance es granular o `Read: All / Write: All`.
+  La solicitud queda **pendiente de aprobación de Fourvenues** antes de activarse.
 - El **referente/RRPP no es asignable por reserva vía API**: queda el **canal de ventas** como referente (el campo referente por API solo existe en entradas).
 - **Hora de llegada y similares** van en el campo **notas** (`observations_client`); no hay campo específico.
 
@@ -66,20 +68,26 @@ Inacio (inacio.baldovino@fourvenues.com), Álvaro (alvaro.aviles@fourvenues.com)
 - **Botellas**: ¿producto de la reserva (define precio) o en notas?
 - **Condiciones comerciales** de la integración (Álvaro).
 
-## 🚧 Bloqueo actual: permisos
+## ✅ Bloqueo de permisos resuelto — clave solicitada (pendiente de aprobación)
 
-La cuenta **joseegarciadiaz9** es **colaborador** de "Live Punta Umbría", NO admin.
-Por eso el panel Alpha (`alpha.pro.fourvenues.com`) no muestra "Ajustes → Developer
-Portal" (el menú de la organización solo ofrece "Dejar de colaborar").
+**joseegarciadiaz9 ya es admin** de "Live Punta Umbría" en Alpha, así que en
+`alpha.pro.fourvenues.com` aparece **Ajustes → Developer Portal**. Desde ahí se ha
+**solicitado** la clave.
 
-**Para desbloquear**, una de dos:
+Hallazgos al pedir la clave (corrigen lo que creíamos):
 
-1. Que el **propietario** de la organización (probablemente **LIVE COMPRAS /
-   livepuntacompras@gmail.com**) dé **permisos de admin** a Jose. Entonces aparece
-   el Developer Portal y se puede generar la clave.
-2. O que ese propietario **genere la clave** directamente y la pase.
+- **No existe un permiso "Booking"**. La Channel Manager API ofrece permisos granulares
+  (Auth, Event, List Rate, List, Location, Organization, Ticket Rate, Ticket, Payment,
+  Webhook, Preregister…) o los globales **Read: All / Write: All**.
+- La clave se pidió con **`all:read` + `all:write`** (amplio, válido para Alpha; **acotar
+  en producción**). Ventaja: al tener todos los permisos, a futuro se pueden implementar
+  más funciones (CRM, entradas, pagos, webhooks) sin volver a pedir clave.
+- El **tipo de API es inmutable** una vez creada; los permisos sí se pueden ajustar.
+- La clave **no se genera al instante**: queda en estado **"Solicitada"** (valor
+  "Pendiente") hasta que **Fourvenues la aprueba**.
 
-Al crear la clave: tipo **Channel Manager**, permisos **Booking**, entorno **Alpha**.
+Solicitud enviada: clave **Channel Manager** "App Reservas TOTEM - RRPP (Alpha)",
+`all:read` + `all:write`, caducidad **06/08/2027**, estado **Solicitada**.
 
 > Nota: la clave que llegó por email el 3-ago ("Tu clave API de Integración",
 > descripción "Medición de ventas Meta Ads – Live", termina en `CsOuUc`) es de la
@@ -100,9 +108,13 @@ Todo compila (los únicos avisos de `tsc` son ambientales: `cloudflare:workers`,
 
 ## Próximos pasos
 
-1. Conseguir permisos de admin (o que el owner genere la clave) → **generar API key Channel Manager (Booking) en Alpha**.
-2. Poner `FOURVENUES_API_KEY` en `.env` / secret del Worker; la UI mostrará "conectado".
-3. Sustituir zonas/mesas/precios hardcodeados de `app/page.tsx` por datos reales de `GET /bookings/zones`.
-4. Enganchar el botón de crear reserva a `createCheckout` / `requestBooking`.
-5. Cerrar dudas pendientes (0 €, bloqueo de precio, botellas) con Inacio y aplicar.
-6. Validar end-to-end en Alpha; luego pedir claves de producción.
+1. ✅ Admin conseguido y **clave Channel Manager solicitada** en Alpha (`all:read`/`all:write`).
+2. ⏳ **Esperar aprobación de Fourvenues** (estado "Solicitada" → activa). Opcional: escribir a
+   Inacio para pedir que la aprueben cuanto antes.
+3. Cuando la clave esté activa, copiar su valor a `FOURVENUES_API_KEY` en `.env` /
+   secret del Worker y `FOURVENUES_ENV=alpha`; la UI mostrará "Conectado a Fourvenues (Alpha)".
+4. Sustituir zonas/mesas/precios hardcodeados de `app/page.tsx` por datos reales de `GET /bookings/zones`.
+5. Enganchar el botón de crear reserva a `createCheckout` / `requestBooking`. Para reservas
+   "no cobrar / 0 €": adjuntar las notas del RRPP a `observations_client` y usar el flujo
+   **`request`** (lo confirma el venue), así se omiten las dudas de precio con Fourvenues.
+6. Validar end-to-end en Alpha; luego pedir claves de producción y **acotar los permisos**.
