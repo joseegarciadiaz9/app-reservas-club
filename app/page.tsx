@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+import { getIntegrationStatus } from "./lib/fourvenues-browser";
 
 type Zone = "pinar" | "pista" | "jaima" | "lateral" | "front";
 type TableStatus = "available" | "internal" | "blocked";
@@ -172,6 +174,28 @@ export default function Home() {
   const [combineMode, setCombineMode] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewed, setReviewed] = useState(false);
+  const [integration, setIntegration] = useState<{ configured: boolean; baseUrl: string } | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getIntegrationStatus()
+      .then((result) => {
+        if (active && result.success && result.data) setIntegration(result.data);
+      })
+      .catch(() => {
+        /* Sin conexión con el backend: se mantiene el modo simulación. */
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const isAlpha = integration?.baseUrl.includes("alpha") ?? true;
+  const connectionLabel = integration?.configured
+    ? isAlpha
+      ? "Conectado a Fourvenues (Alpha)"
+      : "Conectado a Fourvenues (Producción)"
+    : "API Alpha pendiente";
 
   const afterCutoff = draft.arrival > "18:30";
   const isConcert = eventForDate(draft.date) !== "Evento de TØTEM";
@@ -287,9 +311,9 @@ export default function Home() {
           <button className="nav-item"><span className="nav-icon">◎</span>Reglas y zonas</button>
         </nav>
 
-        <div className="sync-card test-sync">
-          <div className="sync-row"><span className="status-dot" /> API Alpha pendiente</div>
-          <p>El conector se activará al recibir la clave</p>
+        <div className={integration?.configured ? "sync-card" : "sync-card test-sync"}>
+          <div className="sync-row"><span className="status-dot" /> {connectionLabel}</div>
+          <p>{integration?.configured ? "El conector está activo y creará la reserva en Fourvenues." : "El conector se activará al recibir la clave"}</p>
         </div>
 
         <div className="profile">
@@ -319,7 +343,7 @@ export default function Home() {
           <div className="step-line complete" />
           <div className="step active"><span>2</span><div><b>Revisión y mesa</b><small>Estás aquí</small></div></div>
           <div className="step-line" />
-          <div className="step"><span>3</span><div><b>Fourvenues</b><small>API Alpha pendiente</small></div></div>
+          <div className="step"><span>3</span><div><b>Fourvenues</b><small>{connectionLabel}</small></div></div>
         </div>
 
         <div className="content-grid">
