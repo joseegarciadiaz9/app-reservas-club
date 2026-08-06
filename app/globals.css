@@ -218,6 +218,14 @@ button { cursor: pointer; }
 .blocked-action { width: 100%; border: 0; border-radius: 9px; padding: 12px; color: #737a83; background: #e8e5df; font-size: 9px; font-weight: 800; cursor: not-allowed; }
 .duplicate-note { margin: 8px 4px 0; color: #95652d; font-size: 8px; line-height: 1.45; text-align: center; }
 .modal-action.secondary { margin-top: 10px; color: var(--ink); border: 1px solid var(--line); background: white; }
+.modal-action.primary { background: var(--green); box-shadow: 0 7px 14px rgba(38,117,92,.18); }
+.modal-action.primary:disabled { background: #e8e5df; color: #737a83; box-shadow: none; cursor: not-allowed; }
+.submit-result { margin-top: 12px; padding: 11px 12px; border-radius: 10px; font-size: 9px; font-weight: 700; line-height: 1.45; }
+.submit-result.success { display: flex; flex-direction: column; gap: 7px; color: var(--green); background: #e8f3ed; border: 1px solid #cfe6db; }
+.submit-result.error { color: #a3341f; background: #fbe9e5; border: 1px solid #f1cec6; }
+.payment-link { color: var(--navy); font-weight: 800; text-decoration: underline; }
+.no-charge-badge { margin-left: 6px; padding: 2px 6px; border-radius: 999px; color: #95652d; background: #f6ecd9; font-size: 7px; font-weight: 800; font-style: normal; letter-spacing: .04em; text-transform: uppercase; }
+.field-hint { margin-top: 5px; color: #95652d; font-size: 8px; line-height: 1.4; }
 
 @media (max-width: 1000px) {
   .app-shell { grid-template-columns: 82px minmax(0, 1fr); }

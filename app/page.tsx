@@ -2,7 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { getIntegrationStatus } from "./lib/fourvenues-browser";
+import {
+  createCheckout,
+  fetchEvents,
+  fetchZones,
+  getIntegrationStatus,
+  requestBooking,
+  toIsoDate,
+} from "./lib/fourvenues-browser";
+import {
+  buildCheckoutInput,
+  buildRequestInput,
+  composeClientObservations,
+  detectNoCharge,
+  resolveBookingMode,
+  resolvePlacement,
+} from "./lib/booking-payload";
+import type { FourvenuesEvent, FourvenuesZone } from "./lib/fourvenues";
 
 type Zone = "pinar" | "pista" | "jaima" | "lateral" | "front";
 type TableStatus = "available" | "internal" | "blocked";
@@ -175,6 +191,13 @@ export default function Home() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewed, setReviewed] = useState(false);
   const [integration, setIntegration] = useState<{ configured: boolean; baseUrl: string } | null>(null);
+  const [liveEvent, setLiveEvent] = useState<FourvenuesEvent | null>(null);
+  const [liveZones, setLiveZones] = useState<FourvenuesZone[] | null>(null);
+  const [submit, setSubmit] = useState<{
+    status: "idle" | "loading" | "success" | "error";
+    message?: string;
+    paymentUrl?: string;
+  }>({ status: "idle" });
 
   useEffect(() => {
     let active = true;
@@ -189,6 +212,28 @@ export default function Home() {
       active = false;
     };
   }, []);
+
+  // Solo cuando hay API key: localiza el evento de la fecha y carga sus zonas
+  // reales. En simulación no se ejecuta y la UI sigue con datos hardcodeados.
+  useEffect(() => {
+    if (!integration?.configured || !draft.date) return;
+    let active = true;
+    setLiveEvent(null);
+    setLiveZones(null);
+    (async () => {
+      const events = await fetchEvents(toIsoDate(draft.date));
+      if (!active || !events.success || !events.data?.length) return;
+      const event = events.data[0];
+      setLiveEvent(event);
+      const zones = await fetchZones(event._id);
+      if (active && zones.success && zones.data) setLiveZones(zones.data);
+    })().catch(() => {
+      /* Un fallo cargando datos reales no debe romper la pantalla. */
+    });
+    return () => {
+      active = false;
+    };
+  }, [integration?.configured, draft.date]);
 
   const isAlpha = integration?.baseUrl.includes("alpha") ?? true;
   const connectionLabel = integration?.configured
@@ -224,6 +269,11 @@ export default function Home() {
   const maxCapacity = draft.bottles * 4;
   const bottleCapacityOk = draft.people <= maxCapacity;
   const requiredFieldsOk = Boolean(draft.date && draft.fullName && draft.email && draft.people && draft.bottles);
+
+  // "No cobrar / 0 €": se detecta por las notas y decide el flujo (request vs checkout).
+  const noCharge = detectNoCharge(draft.observations);
+  const bookingMode = resolveBookingMode(noCharge);
+  const canSubmitLive = Boolean(integration?.configured && liveEvent && liveZones?.length);
 
   function updateDraft<K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -295,6 +345,81 @@ export default function Home() {
     setSelectedTables(suggestedCombination(result.draft.zone, result.draft.people));
     setParsed(true);
     setReviewOpen(false);
+  }
+
+  /**
+   * Crea la reserva real en Fourvenues. Solo se usa con API key activa y datos
+   * reales cargados; en simulación el botón queda desactivado (sin efectos).
+   */
+  async function submitBooking() {
+    if (!canSubmitLive || !liveEvent || !liveZones) return;
+
+    const placement = resolvePlacement(liveZones, {
+      zoneLabel: zoneCopy[draft.zone].label,
+      tableName: selectedTables[0],
+      bottles: draft.bottles,
+    });
+    if (!placement) {
+      setSubmit({
+        status: "error",
+        message: "No se ha encontrado la zona o la tarifa en Fourvenues para esta selección.",
+      });
+      return;
+    }
+
+    const observations = composeClientObservations({
+      arrival: draft.arrival,
+      bottles: draft.bottles,
+      referral: draft.referral,
+      tables: selectedTables,
+      internalNotes: draft.observations,
+      noCharge,
+    });
+    const info = {
+      full_name: draft.fullName,
+      email: draft.email,
+      phone: draft.phone || undefined,
+      quantity: draft.people,
+    };
+
+    setSubmit({ status: "loading" });
+    try {
+      if (bookingMode === "request") {
+        const result = await requestBooking(
+          buildRequestInput({ eventId: liveEvent._id, placement, info, observations }),
+        );
+        if (!result.success) throw new Error(result.error || "No se pudo solicitar la reserva.");
+        setSubmit({
+          status: "success",
+          message: "Reserva solicitada. El local debe aceptarla desde el panel (sin cobro).",
+        });
+      } else {
+        const origin = typeof window !== "undefined" ? window.location.origin : undefined;
+        const result = await createCheckout(
+          buildCheckoutInput({
+            eventId: liveEvent._id,
+            placement,
+            info,
+            observations,
+            redirectUrl: origin,
+            errorUrl: origin,
+          }),
+        );
+        if (!result.success || !result.data) {
+          throw new Error(result.error || "No se pudo crear el checkout.");
+        }
+        setSubmit({
+          status: "success",
+          message: "Reserva creada. Enlace de pago listo para enviar al cliente.",
+          paymentUrl: result.data.payment_url,
+        });
+      }
+    } catch (error) {
+      setSubmit({
+        status: "error",
+        message: error instanceof Error ? error.message : "Error al crear la reserva.",
+      });
+    }
   }
 
   return (
@@ -372,7 +497,7 @@ export default function Home() {
                 <label className="field"><span>Teléfono</span><input value={draft.phone} onChange={(e) => updateDraft("phone", e.target.value)} /></label>
                 <label className="field"><span>Correo electrónico</span><input type="email" value={draft.email} onChange={(e) => updateDraft("email", e.target.value)} /></label>
                 <label className="field"><span>Referente / RRPP</span><select value={draft.referral} onChange={(e) => updateDraft("referral", e.target.value)}><option>Jose Garcia</option><option>RAUL ALFONSO</option><option>Sin asignar</option></select></label>
-                <label className="field wide"><span>Observaciones internas</span><textarea value={draft.observations} placeholder="Ej.: No pagan entrada, botella Martin Miller gratis" onChange={(e) => updateDraft("observations", e.target.value)} /></label>
+                <label className="field wide"><span>Observaciones internas {noCharge && <em className="no-charge-badge">Sin cobro detectado</em>}</span><textarea value={draft.observations} placeholder="Ej.: No pagan entrada, botella Martin Miller gratis" onChange={(e) => updateDraft("observations", e.target.value)} />{noCharge && <small className="field-hint">Se enviará como solicitud (la confirma el local), sin cobro automático.</small>}</label>
               </div>
             </div>
           </section>
@@ -454,7 +579,11 @@ export default function Home() {
               <div><span>✓</span><p><b>Evento localizado</b><small>{draft.date} · {eventName}</small></p></div>
               <div><span>✓</span><p><b>Zona y tarifa comprobadas</b><small>{zoneCopy[draft.zone].label} · {price} € · adelanto {deposit} €</small></p></div>
               <div><span>✓</span><p><b>{selectedTables.length > 1 ? "Mesas combinadas preparadas" : "Mesa compatible preparada"}</b><small>{selectedTables.length > 1 ? `Mesas ${selectedTablesLabel}` : `Mesa ${selectedTablesLabel}`} · {combinationUsesInternal ? "incluye venta interna RRPP" : "venta pública"} · {draft.people} personas</small></p></div>
-              <div className="pending"><span>5</span><p><b>Conector Alpha pendiente</b><small>Al recibir la API key, este paso creará el booking en Fourvenues</small></p></div>
+              {canSubmitLive ? (
+                <div><span>✓</span><p><b>Conector Fourvenues activo</b><small>{noCharge ? "Se enviará como SOLICITUD sin cobro (la confirma el local)." : "Se creará la reserva con enlace de pago (checkout)."}</small></p></div>
+              ) : (
+                <div className="pending"><span>5</span><p><b>Conector Alpha pendiente</b><small>Al recibir la API key, este paso creará el booking en Fourvenues</small></p></div>
+              )}
             </div>
 
             <div className="review-receipt">
@@ -474,10 +603,40 @@ export default function Home() {
               <input type="checkbox" checked={reviewed} onChange={(event) => setReviewed(event.target.checked)} />
               <span>He revisado cliente, evento, zona, mesa e importes.</span>
             </label>
-            <button className="blocked-action" disabled>
-              {reviewed ? "Preparado · esperando API key Alpha" : "Revisa y marca la confirmación"}
-            </button>
-            <p className="duplicate-note">No se enviará ninguna reserva mientras el conector Alpha esté desactivado.</p>
+
+            {submit.status === "success" ? (
+              <div className="submit-result success">
+                <b>✓ {submit.message}</b>
+                {submit.paymentUrl && (
+                  <a className="payment-link" href={submit.paymentUrl} target="_blank" rel="noopener noreferrer">Abrir enlace de pago →</a>
+                )}
+              </div>
+            ) : canSubmitLive ? (
+              <>
+                {submit.status === "error" && <p className="submit-result error">{submit.message}</p>}
+                <button
+                  className="modal-action primary"
+                  disabled={!reviewed || submit.status === "loading"}
+                  onClick={submitBooking}
+                >
+                  {submit.status === "loading"
+                    ? "Creando reserva…"
+                    : !reviewed
+                      ? "Revisa y marca la confirmación"
+                      : noCharge
+                        ? "Solicitar reserva sin cobro"
+                        : "Crear reserva y generar enlace de pago"}
+                </button>
+                <p className="duplicate-note">{noCharge ? "Irá como solicitud: el local la confirma desde el panel." : "Se generará un enlace de pago para enviar al cliente."}</p>
+              </>
+            ) : (
+              <>
+                <button className="blocked-action" disabled>
+                  {reviewed ? "Preparado · esperando API key Alpha" : "Revisa y marca la confirmación"}
+                </button>
+                <p className="duplicate-note">No se enviará ninguna reserva mientras el conector Alpha esté desactivado.</p>
+              </>
+            )}
             <button className="modal-action secondary" onClick={() => setReviewOpen(false)}>Volver a la reserva</button>
           </div>
         </div>
