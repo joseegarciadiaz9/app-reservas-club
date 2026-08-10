@@ -136,10 +136,14 @@ Con eso se completó la primera **reserva real end-to-end** en Alpha
 (`POST /bookings/request` → `200`, `status: "to-review"`, mesa J1 asignada y
 observaciones correctas), visible en el panel como "Pendiente 65,00 €".
 
-⚠️ **Riesgo para producción, a verificar:** si las zonas reales de TØTEM tienen
-horarios configurados, tampoco se verán por API. Habría que quitárselos, y eso
-afecta a su operativa normal (las horas de llegada se gestionan en el panel).
-Conviene comprobarlo antes de prometer fechas.
+✅ **Riesgo descartado.** Comprobado en el panel de producción de TØTEM: sus zonas
+**no usan horarios**. Las tres revisadas —PISTA GENERAL y EMBARCADERO DEL PINAR
+(evento de fiesta) y PINAR (evento de concierto)— tienen *"No usar horas en las
+reservas"* y ninguna rejilla de horas reservables. Encaja con cómo trabajan: el
+recargo por hora de llegada se cobra en taquilla, no se modela en Fourvenues.
+Es decir, **las zonas de TØTEM deberían verse por API sin tocar su operativa**.
+(El horario que bloqueaba el evento de Alpha venía de la copia de un evento de
+Live Punta Umbría de 2022, no de TØTEM.)
 
 Sigue **sin respuesta** la segunda pregunta del correo: si la clave de producción
 debe generarse desde la organización **TØTEM Punta Umbría** (la de Alpha es de
