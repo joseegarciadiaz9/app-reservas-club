@@ -264,22 +264,45 @@ export function resolvePlacement(
   const zone = findZone(zones, mapping.zoneAliases);
   if (!zone) return null;
 
+  return placementForZone(zone, {
+    tableName: selection.tableName,
+    rateAliases: mapping.rateAliases,
+    spacePattern: mapping.spacePattern,
+  });
+}
+
+/**
+ * Construye el placement para una zona ya elegida. Se usa cuando el RRPP
+ * selecciona la zona a mano sobre los datos reales de la API (no hace falta
+ * adivinarla por alias), y opcionalmente fija la tarifa por slug.
+ */
+export function placementForZone(
+  zone: FourvenuesZone,
+  options: {
+    tableName?: string;
+    rateSlug?: string;
+    rateAliases?: string[];
+    spacePattern?: RegExp;
+  } = {},
+): ResolvedPlacement | null {
   const spaces = sellableSpaces(zone);
-  const candidates = mapping.spacePattern
-    ? spaces.filter((space) => mapping.spacePattern!.test(space.name))
+  const candidates = options.spacePattern
+    ? spaces.filter((space) => options.spacePattern!.test(space.name))
     : spaces;
 
-  const spaceMatch = selection.tableName
+  const spaceMatch = options.tableName
     ? candidates.find(
         (space) =>
-          matches(space.name, selection.tableName as string) ||
-          matches(space.normalized_name ?? "", selection.tableName as string),
+          matches(space.name, options.tableName as string) ||
+          matches(space.normalized_name, options.tableName as string),
       )
     : undefined;
 
   // Las tarifas pueden colgar de la mesa concreta o de la zona.
   const rates = spaceMatch?.rates?.length ? spaceMatch.rates : zoneRates(zone);
-  const rate = pickRate(rates, mapping.rateAliases);
+  const rate =
+    (options.rateSlug && rates.find((item) => item.slug === options.rateSlug)) ||
+    pickRate(rates, options.rateAliases ?? []);
   if (!rate) return null;
 
   return {
@@ -292,6 +315,19 @@ export function resolvePlacement(
     rate,
     zone,
   };
+}
+
+/** Precio y adelanto reales que aplicará Fourvenues para esa tarifa. */
+export function priceForRate(rate: FourvenuesRate, people: number) {
+  const extraPeople = Math.max(0, people - (rate.included_persons ?? 0));
+  const supplementUnit = rate.supplement_persons || 1;
+  const extraBlocks = Math.ceil(extraPeople / supplementUnit);
+  const price = rate.price + extraBlocks * (rate.supplement_price ?? 0);
+  const deposit =
+    rate.deposit?.type === "percentage"
+      ? Math.round((price * (rate.deposit.value ?? 0)) / 100)
+      : (rate.deposit?.value ?? 0);
+  return { price, deposit };
 }
 
 // ---------------------------------------------------------------------------

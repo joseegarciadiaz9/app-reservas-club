@@ -218,6 +218,15 @@ button { cursor: pointer; }
 .blocked-action { width: 100%; border: 0; border-radius: 9px; padding: 12px; color: #737a83; background: #e8e5df; font-size: 9px; font-weight: 800; cursor: not-allowed; }
 .duplicate-note { margin: 8px 4px 0; color: #95652d; font-size: 8px; line-height: 1.45; text-align: center; }
 .modal-action.secondary { margin-top: 10px; color: var(--ink); border: 1px solid var(--line); background: white; }
+.live-badge { color: var(--green); background: #e8f3ed; border-color: #cfe6db; }
+.rate-selector { margin-top: 13px; }
+.rate-options { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 7px; }
+.rate-chip { display: flex; flex-direction: column; gap: 2px; padding: 8px 11px; border: 1px solid #ddd6cb; border-radius: 9px; background: #fff; color: var(--ink); text-align: left; }
+.rate-chip b { font-size: 9px; font-weight: 800; }
+.rate-chip small { color: var(--ink-soft); font-size: 8px; }
+.rate-chip.selected { border-color: var(--green); background: #e8f3ed; box-shadow: 0 0 0 3px rgba(38,117,92,.1); }
+.rate-note { margin: 9px 0 0; color: var(--ink-soft); font-size: 8px; line-height: 1.5; }
+.rate-note b { color: var(--ink); }
 .login-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--paper); }
 .login-card { width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 13px; padding: 28px 26px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.82); box-shadow: 0 14px 40px rgba(42,46,54,.07); }
 .login-brand { display: flex; align-items: baseline; gap: 8px; color: var(--ink); }

@@ -15,13 +15,34 @@ import {
   buildRequestInput,
   composeClientObservations,
   detectNoCharge,
+  findZone,
+  placementForZone,
+  priceForRate,
   resolveBookingMode,
-  resolvePlacement,
+  sellableSpaces,
+  zoneRates,
+  ZONE_MAPPINGS,
 } from "./lib/booking-payload";
-import type { FourvenuesEvent, FourvenuesZone } from "./lib/fourvenues";
+import type { FourvenuesEvent, FourvenuesRate, FourvenuesZone } from "./lib/fourvenues";
 
 type Zone = "pinar" | "pista" | "jaima" | "lateral" | "front";
 type TableStatus = "available" | "internal" | "blocked";
+
+/**
+ * Zona tal y como se pinta en pantalla. En simulación sale de las constantes de
+ * abajo; conectados, de las zonas REALES que devuelve `GET /bookings/zones`.
+ */
+type DisplayTable = { name: string; status: TableStatus; capacity: number };
+type DisplayZone = {
+  key: string;
+  label: string;
+  subtitle: string;
+  special?: boolean;
+  tables: DisplayTable[];
+  /** Solo en modo conectado. */
+  live?: FourvenuesZone;
+  rates?: FourvenuesRate[];
+};
 
 type BookingDraft = {
   date: string;
@@ -29,7 +50,8 @@ type BookingDraft = {
   people: number;
   phone: string;
   email: string;
-  zone: Zone;
+  /** Clave de la zona: la del catálogo en simulación, el slug real si hay conexión. */
+  zone: string;
   arrival: string;
   bottles: number;
   observations: string;
@@ -95,25 +117,73 @@ const internalTables = new Set(["202", "205", "109", "J2", "L5", "F2"]);
 const blockedTables = new Set(["204", "207", "106", "J3", "L2", "F4"]);
 const tableCapacity = 9;
 
-function tableStatus(table: string): TableStatus {
+function simulatedTableStatus(table: string): TableStatus {
   if (blockedTables.has(table)) return "blocked";
   if (internalTables.has(table)) return "internal";
   return "available";
 }
 
-function suggestedCombination(zone: Zone, people: number, preferredTable?: string) {
-  const zoneTables = tables[zone];
-  const tablesNeeded = Math.max(1, Math.ceil(people / tableCapacity));
-  const preferredIndex = preferredTable ? zoneTables.indexOf(preferredTable) : -1;
-  const startIndexes = [preferredIndex, ...zoneTables.map((_, index) => index)]
+/** Zonas del catálogo de simulación (sin conexión con Fourvenues). */
+const simulatedZones: DisplayZone[] = (Object.keys(zoneCopy) as Zone[]).map((key) => ({
+  key,
+  label: zoneCopy[key].label,
+  subtitle: zoneCopy[key].subtitle,
+  special: key === "jaima" || key === "front",
+  tables: tables[key].map((name) => ({
+    name,
+    status: simulatedTableStatus(name),
+    capacity: tableCapacity,
+  })),
+}));
+
+/** Convierte las zonas reales de la API en zonas pintables. */
+function toDisplayZones(live: FourvenuesZone[]): DisplayZone[] {
+  return live.map((zone) => {
+    const rates = zoneRates(zone);
+    const cheapest = rates.reduce<FourvenuesRate | undefined>(
+      (best, rate) => (!best || rate.price < best.price ? rate : best),
+      undefined,
+    );
+    const libres = sellableSpaces(zone).length;
+    return {
+      key: zone.slug || zone._id,
+      label: zone.name,
+      subtitle: [
+        `${libres} mesa${libres === 1 ? "" : "s"}`,
+        cheapest ? `desde ${cheapest.price} €` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      special: zone.is_full,
+      tables: (zone.spaces ?? []).map((space) => ({
+        name: space.name,
+        capacity: space.capacity ?? tableCapacity,
+        status:
+          space.blocked || space.hidden || space.available === false ? "blocked" : "available",
+      })),
+      live: zone,
+      rates,
+    };
+  });
+}
+
+function suggestedCombination(zoneTables: DisplayTable[], people: number, preferredTable?: string) {
+  const names = zoneTables.map((table) => table.name);
+  const perTable = zoneTables[0]?.capacity || tableCapacity;
+  const tablesNeeded = Math.max(1, Math.ceil(people / perTable));
+  const isSellable = (name: string) =>
+    zoneTables.find((table) => table.name === name)?.status !== "blocked";
+
+  const preferredIndex = preferredTable ? names.indexOf(preferredTable) : -1;
+  const startIndexes = [preferredIndex, ...names.map((_, index) => index)]
     .filter((index, position, values) => index >= 0 && values.indexOf(index) === position);
 
   for (const startIndex of startIndexes) {
-    const group = zoneTables.slice(startIndex, startIndex + tablesNeeded);
-    if (group.length === tablesNeeded && group.every((table) => tableStatus(table) !== "blocked")) return group;
+    const group = names.slice(startIndex, startIndex + tablesNeeded);
+    if (group.length === tablesNeeded && group.every(isSellable)) return group;
   }
 
-  const firstSellable = zoneTables.find((table) => tableStatus(table) !== "blocked");
+  const firstSellable = names.find(isSellable);
   return firstSellable ? [firstSellable] : [];
 }
 
@@ -190,6 +260,7 @@ export default function Home() {
   const [combineMode, setCombineMode] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewed, setReviewed] = useState(false);
+  const [selectedRateSlug, setSelectedRateSlug] = useState<string | undefined>();
   const [integration, setIntegration] = useState<{ configured: boolean; baseUrl: string } | null>(null);
   const [liveEvent, setLiveEvent] = useState<FourvenuesEvent | null>(null);
   const [liveZones, setLiveZones] = useState<FourvenuesZone[] | null>(null);
@@ -226,13 +297,31 @@ export default function Home() {
       const event = events.data[0];
       setLiveEvent(event);
       const zones = await fetchZones(event._id);
-      if (active && zones.success && zones.data) setLiveZones(zones.data);
+      if (!active || !zones.success || !zones.data?.length) return;
+      setLiveZones(zones.data);
+
+      // Traduce la zona detectada en el formulario ("pinar", "jaima"…) a la
+      // zona equivalente de ESTE evento, y recoloca tarifa y mesas sugeridas.
+      const mapping = ZONE_MAPPINGS[draft.zone];
+      const match = mapping ? findZone(zones.data, mapping.zoneAliases) : undefined;
+      const target = match ?? zones.data[0];
+      const key = target.slug || target._id;
+
+      setDraft((current) => (current.zone === key ? current : { ...current, zone: key }));
+      setSelectedRateSlug(zoneRates(target)[0]?.slug);
+      setSelectedTables(
+        suggestedCombination(toDisplayZones([target])[0].tables, draft.people),
+      );
     })().catch(() => {
       /* Un fallo cargando datos reales no debe romper la pantalla. */
     });
     return () => {
       active = false;
     };
+    // `draft.zone` y `draft.people` se leen a propósito sin estar en las
+    // dependencias: solo hay que recargar el evento al cambiar de fecha, no
+    // cada vez que el RRPP toca la zona o el número de personas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [integration?.configured, draft.date]);
 
   const isAlpha = integration?.baseUrl.includes("alpha") ?? true;
@@ -245,15 +334,39 @@ export default function Home() {
   const afterCutoff = draft.arrival > "18:30";
   const isConcert = eventForDate(draft.date) !== "Evento de TØTEM";
   const eventName = eventForDate(draft.date);
-  const currentTables = useMemo(() => tables[draft.zone], [draft.zone]);
-  const sellableCount = currentTables.filter((table) => tableStatus(table) !== "blocked").length;
+
+  // Conectados: zonas y mesas reales del evento. Si no, el catálogo simulado.
+  const displayZones = useMemo(
+    () => (liveZones?.length ? toDisplayZones(liveZones) : simulatedZones),
+    [liveZones],
+  );
+  const currentZone =
+    displayZones.find((zone) => zone.key === draft.zone) ?? displayZones[0];
+  const currentTables = currentZone?.tables ?? [];
+  const isLive = Boolean(currentZone?.live);
+
+  const statusOf = (table: string): TableStatus =>
+    currentTables.find((item) => item.name === table)?.status ?? "available";
+  const capacityOf = (table: string) =>
+    currentTables.find((item) => item.name === table)?.capacity ?? tableCapacity;
+
+  const sellableCount = currentTables.filter((table) => table.status !== "blocked").length;
   const selectedTablesLabel = selectedTables.join(" + ");
-  const combinationUsesInternal = selectedTables.some((table) => tableStatus(table) === "internal");
-  const tablesNeeded = Math.max(1, Math.ceil(draft.people / tableCapacity));
-  const selectedTableCapacity = selectedTables.length * tableCapacity;
+  const combinationUsesInternal = selectedTables.some((table) => statusOf(table) === "internal");
+  const perTableCapacity = currentTables[0]?.capacity ?? tableCapacity;
+  const tablesNeeded = Math.max(1, Math.ceil(draft.people / perTableCapacity));
+  const selectedTableCapacity = selectedTables.reduce(
+    (total, table) => total + capacityOf(table),
+    0,
+  );
   const tablesCapacityOk = selectedTableCapacity >= draft.people;
 
-  const bottlePrice = draft.zone === "front"
+  // Tarifa: conectados la elige el RRPP entre las reales de la zona.
+  const availableRates = currentZone?.rates ?? [];
+  const activeRate =
+    availableRates.find((rate) => rate.slug === selectedRateSlug) ?? availableRates[0];
+
+  const simulatedBottlePrice = draft.zone === "front"
     ? (afterCutoff ? 150 : 130)
     : draft.zone === "lateral"
       ? (afterCutoff ? 120 : 100)
@@ -263,9 +376,13 @@ export default function Home() {
   const includedPeople = draft.bottles * 3;
   const extraPeople = Math.max(0, draft.people - includedPeople);
   const extraPrice = Math.min(extraPeople, draft.bottles) * 15;
-  const standardPrice = draft.bottles * bottlePrice + extraPrice;
-  const price = draft.zone === "jaima" ? Math.max(300, standardPrice) : standardPrice;
-  const deposit = Math.round(price / 2);
+  const standardPrice = draft.bottles * simulatedBottlePrice + extraPrice;
+  const simulatedPrice = draft.zone === "jaima" ? Math.max(300, standardPrice) : standardPrice;
+
+  // Con tarifa real, el importe lo calcula Fourvenues (precio + suplementos).
+  const livePricing = activeRate ? priceForRate(activeRate, draft.people) : null;
+  const price = livePricing?.price ?? simulatedPrice;
+  const deposit = livePricing?.deposit ?? Math.round(price / 2);
   const maxCapacity = draft.bottles * 4;
   const bottleCapacityOk = draft.people <= maxCapacity;
   const requiredFieldsOk = Boolean(draft.date && draft.fullName && draft.email && draft.people && draft.bottles);
@@ -279,36 +396,38 @@ export default function Home() {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
-  function chooseZone(nextZone: Zone) {
-    updateDraft("zone", nextZone);
-    const shouldCombine = draft.people > tableCapacity;
-    setCombineMode(shouldCombine);
-    setSelectedTables(suggestedCombination(nextZone, draft.people));
+  function chooseZone(nextZoneKey: string) {
+    const nextZone = displayZones.find((zone) => zone.key === nextZoneKey);
+    updateDraft("zone", nextZoneKey);
+    setSelectedRateSlug(nextZone?.rates?.[0]?.slug);
+    const perTable = nextZone?.tables[0]?.capacity ?? tableCapacity;
+    setCombineMode(draft.people > perTable);
+    setSelectedTables(suggestedCombination(nextZone?.tables ?? [], draft.people));
   }
 
   function updatePeople(people: number) {
     updateDraft("people", people);
-    const shouldCombine = people > tableCapacity;
-    setCombineMode(shouldCombine);
-    setSelectedTables(suggestedCombination(draft.zone, people, selectedTables[0]));
+    setCombineMode(people > perTableCapacity);
+    setSelectedTables(suggestedCombination(currentTables, people, selectedTables[0]));
   }
 
   function toggleCombineMode() {
     const nextMode = !combineMode;
     setCombineMode(nextMode);
-    if (nextMode) setSelectedTables(suggestedCombination(draft.zone, draft.people, selectedTables[0]));
+    if (nextMode) setSelectedTables(suggestedCombination(currentTables, draft.people, selectedTables[0]));
     else setSelectedTables(selectedTables.slice(0, 1));
   }
 
   function selectTable(table: string) {
-    if (tableStatus(table) === "blocked") return;
+    if (statusOf(table) === "blocked") return;
     if (!combineMode) {
       setSelectedTables([table]);
       return;
     }
 
-    const tableIndex = currentTables.indexOf(table);
-    const selectedIndexes = selectedTables.map((item) => currentTables.indexOf(item)).sort((a, b) => a - b);
+    const names = currentTables.map((item) => item.name);
+    const tableIndex = names.indexOf(table);
+    const selectedIndexes = selectedTables.map((item) => names.indexOf(item)).sort((a, b) => a - b);
     const isSelected = selectedTables.includes(table);
 
     if (isSelected) {
@@ -320,30 +439,42 @@ export default function Home() {
 
     const isAdjacent = tableIndex === selectedIndexes[0] - 1 || tableIndex === selectedIndexes[selectedIndexes.length - 1] + 1;
     if (isAdjacent) {
-      setSelectedTables((current) => [...current, table].sort((a, b) => currentTables.indexOf(a) - currentTables.indexOf(b)));
+      setSelectedTables((current) => [...current, table].sort((a, b) => names.indexOf(a) - names.indexOf(b)));
     } else {
       setSelectedTables([table]);
     }
   }
 
-  function analyzeRequest() {
-    const result = parseRequest(rawRequest, draft);
-    setDraft(result.draft);
+  /** Traduce la zona detectada por el parser a la zona que se está mostrando. */
+  function displayKeyFor(appZoneKey: string): string {
+    if (!liveZones?.length) return appZoneKey;
+    const mapping = ZONE_MAPPINGS[appZoneKey];
+    const match = mapping ? findZone(liveZones, mapping.zoneAliases) : undefined;
+    const target = match ?? liveZones[0];
+    return target.slug || target._id;
+  }
+
+  /** Aplica un borrador recién parseado ajustando zona, tarifa y mesas. */
+  function applyParsed(result: ReturnType<typeof parseRequest>, forceCombine = false) {
+    const zoneKey = displayKeyFor(result.draft.zone);
+    const zone = displayZones.find((item) => item.key === zoneKey);
+    const perTable = zone?.tables[0]?.capacity ?? tableCapacity;
+
+    setDraft({ ...result.draft, zone: zoneKey });
     setDetectedFields(result.detected);
-    const shouldCombine = result.draft.people > tableCapacity;
-    setCombineMode(shouldCombine);
-    setSelectedTables(suggestedCombination(result.draft.zone, result.draft.people));
+    setSelectedRateSlug(zone?.rates?.[0]?.slug);
+    setCombineMode(forceCombine || result.draft.people > perTable);
+    setSelectedTables(suggestedCombination(zone?.tables ?? [], result.draft.people));
     setParsed(true);
   }
 
+  function analyzeRequest() {
+    applyParsed(parseRequest(rawRequest, draft));
+  }
+
   function loadLargeGroupDemo() {
-    const result = parseRequest(largeGroupRequest, draft);
     setRawRequest(largeGroupRequest);
-    setDraft(result.draft);
-    setDetectedFields(result.detected);
-    setCombineMode(true);
-    setSelectedTables(suggestedCombination(result.draft.zone, result.draft.people));
-    setParsed(true);
+    applyParsed(parseRequest(largeGroupRequest, draft), true);
     setReviewOpen(false);
   }
 
@@ -354,10 +485,13 @@ export default function Home() {
   async function submitBooking() {
     if (!canSubmitLive || !liveEvent || !liveZones) return;
 
-    const placement = resolvePlacement(liveZones, {
-      zoneKey: draft.zone,
-      tableName: selectedTables[0],
-    });
+    // La zona ya está elegida sobre datos reales: no hay que adivinarla.
+    const placement = currentZone?.live
+      ? placementForZone(currentZone.live, {
+          tableName: selectedTables[0],
+          rateSlug: activeRate?.slug,
+        })
+      : null;
     if (!placement) {
       setSubmit({
         status: "error",
@@ -460,7 +594,9 @@ export default function Home() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <div className="test-badge"><span /> Simulación conectable a Alpha</div>
+            <div className={isLive ? "test-badge live-badge" : "test-badge"}>
+              <span /> {isLive ? `Zonas reales de ${eventName}` : "Simulación conectable a Alpha"}
+            </div>
             <p className="eyebrow">Nueva reserva</p>
             <h1>Del mensaje a la mesa.</h1>
             <p className="test-description">Analiza el formulario, valida la zona y deja preparada la reserva para Fourvenues.</p>
@@ -517,47 +653,72 @@ export default function Home() {
               <span className="availability"><i /> {sellableCount} vendibles</span>
             </div>
 
-            <div className="zone-selector five-zones">
-              {(Object.keys(zoneCopy) as Zone[]).map((key) => (
-                <button key={key} className={draft.zone === key ? "zone-card selected" : "zone-card"} onClick={() => chooseZone(key)}>
+            <div className={`zone-selector ${displayZones.length > 4 ? "five-zones" : ""}`}>
+              {displayZones.map((zone) => (
+                <button key={zone.key} className={currentZone?.key === zone.key ? "zone-card selected" : "zone-card"} onClick={() => chooseZone(zone.key)}>
                   <span className="zone-radio" />
-                  <b>{zoneCopy[key].label}</b>
-                  <small>{zoneCopy[key].subtitle}</small>
-                  {(key === "jaima" || key === "front") && <em>Especial</em>}
+                  <b>{zone.label}</b>
+                  <small>{zone.subtitle}</small>
+                  {zone.special && <em>{isLive ? "Completa" : "Especial"}</em>}
                 </button>
               ))}
             </div>
 
-            <div className="rule-note">
-              <span>✓</span><div><b>Regla de venta interna aplicada</b><p>Los puntos rojos indican mesas ocultas en la web pero vendibles por RRPP. Las rayas rojas indican mesas bloqueadas para todo el mundo.</p></div>
-            </div>
+            {isLive && availableRates.length > 1 && (
+              <div className="rate-selector">
+                <span className="mini-label">Tarifa</span>
+                <div className="rate-options">
+                  {availableRates.map((rate) => (
+                    <button
+                      key={rate.slug}
+                      type="button"
+                      className={activeRate?.slug === rate.slug ? "rate-chip selected" : "rate-chip"}
+                      onClick={() => setSelectedRateSlug(rate.slug)}
+                    >
+                      <b>{rate.name}</b>
+                      <small>{rate.price} € · {rate.included_persons} pax incl.</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-            <div className="table-heading"><div><h3>Elige una mesa</h3><p>Capacidad configurada: {tableCapacity} personas por mesa</p></div><div className="table-heading-actions"><button type="button" className="demo-button" onClick={loadLargeGroupDemo}><span>20</span> Probar grupo</button><div className="legend"><span><i className="free" />Pública</span><span><i className="internal" />Solo RRPP</span><span><i className="busy" />Bloqueada</span></div></div></div>
-            <div className={`combine-control ${draft.people > tableCapacity ? "recommended" : ""}`}>
+            {isLive ? (
+              <div className="rule-note">
+                <span>✓</span><div><b>Datos reales de Fourvenues</b><p>Zonas, mesas y tarifas de este evento. {currentZone?.live?.can_select_client ? "Esta zona permite fijar la mesa concreta." : "Esta zona no permite fijar mesa por API: la asignará el local (se indica en las notas)."}</p></div>
+              </div>
+            ) : (
+              <div className="rule-note">
+                <span>✓</span><div><b>Regla de venta interna aplicada</b><p>Los puntos rojos indican mesas ocultas en la web pero vendibles por RRPP. Las rayas rojas indican mesas bloqueadas para todo el mundo.</p></div>
+              </div>
+            )}
+
+            <div className="table-heading"><div><h3>Elige una mesa</h3><p>Capacidad configurada: {perTableCapacity} personas por mesa</p></div><div className="table-heading-actions">{!isLive && <button type="button" className="demo-button" onClick={loadLargeGroupDemo}><span>20</span> Probar grupo</button>}<div className="legend"><span><i className="free" />Pública</span>{!isLive && <span><i className="internal" />Solo RRPP</span>}<span><i className="busy" />{isLive ? "No disponible" : "Bloqueada"}</span></div></div></div>
+            <div className={`combine-control ${draft.people > perTableCapacity ? "recommended" : ""}`}>
               <button type="button" className={combineMode ? "combine-button active" : "combine-button"} onClick={toggleCombineMode} aria-pressed={combineMode}>
                 <span>⇄</span> Combinar mesas
               </button>
-              <p>{draft.people > tableCapacity ? `${draft.people} personas requieren al menos ${tablesNeeded} mesas contiguas.` : combineMode ? "Selecciona una mesa vecina para añadirla a la combinación." : "Actívalo para reservar varias mesas contiguas juntas."}</p>
-              {combineMode && <button type="button" className="suggest-button" onClick={() => setSelectedTables(suggestedCombination(draft.zone, draft.people, selectedTables[0]))}>Aplicar sugerencia</button>}
+              <p>{draft.people > perTableCapacity ? `${draft.people} personas requieren al menos ${tablesNeeded} mesas contiguas.` : combineMode ? "Selecciona una mesa vecina para añadirla a la combinación." : "Actívalo para reservar varias mesas contiguas juntas."}</p>
+              {combineMode && <button type="button" className="suggest-button" onClick={() => setSelectedTables(suggestedCombination(currentTables, draft.people, selectedTables[0]))}>Aplicar sugerencia</button>}
             </div>
             <div className="table-grid">
               {currentTables.map((table) => {
-                const status = tableStatus(table);
-                const blocked = status === "blocked";
-                const selected = selectedTables.includes(table);
-                const statusLabel = selected && selectedTables.length > 1 ? "Combinada" : status === "internal" ? "Solo RRPP" : blocked ? "No vendible" : `${tableCapacity} pax`;
-                return <button key={table} disabled={blocked} onClick={() => selectTable(table)} className={`table-seat ${selected ? "selected" : ""} ${selected && selectedTables.length > 1 ? "combined" : ""} ${status}`} aria-label={`Mesa ${table}, ${statusLabel}`} aria-pressed={selected}><b>{table}</b><span>{statusLabel}</span></button>;
+                const blocked = table.status === "blocked";
+                const selected = selectedTables.includes(table.name);
+                const statusLabel = selected && selectedTables.length > 1 ? "Combinada" : table.status === "internal" ? "Solo RRPP" : blocked ? "No vendible" : `${table.capacity} pax`;
+                return <button key={table.name} disabled={blocked} onClick={() => selectTable(table.name)} className={`table-seat ${selected ? "selected" : ""} ${selected && selectedTables.length > 1 ? "combined" : ""} ${table.status}`} aria-label={`Mesa ${table.name}, ${statusLabel}`} aria-pressed={selected}><b>{table.name}</b><span>{statusLabel}</span></button>;
               })}
             </div>
 
             <div className="summary-card">
-              <div className="summary-top"><div><span className="mini-label">Resumen de Fourvenues</span><h3>{selectedTables.length > 1 ? "Mesas" : "Mesa"} {selectedTablesLabel} · {zoneCopy[draft.zone].label}</h3></div><span className={combinationUsesInternal ? "verified internal-badge" : "verified"}>{selectedTables.length > 1 ? `⇄ ${selectedTables.length} combinadas` : combinationUsesInternal ? "● Solo RRPP" : "✓ Pública"}</span></div>
+              <div className="summary-top"><div><span className="mini-label">Resumen de Fourvenues</span><h3>{selectedTables.length > 1 ? "Mesas" : "Mesa"} {selectedTablesLabel} · {currentZone?.label}</h3></div><span className={combinationUsesInternal ? "verified internal-badge" : "verified"}>{selectedTables.length > 1 ? `⇄ ${selectedTables.length} combinadas` : combinationUsesInternal ? "● Solo RRPP" : "✓ Pública"}</span></div>
               <div className="summary-stats">
                 <div><span>Personas</span><b>{draft.people}</b></div>
                 <div><span>Capacidad mesas</span><b>{selectedTableCapacity} pax</b></div>
-                <div><span>Precio estimado</span><b>{price} €</b></div>
+                <div><span>{isLive ? "Precio (tarifa real)" : "Precio estimado"}</span><b>{price} €</b></div>
                 <div><span>Adelanto</span><b>{deposit} €</b></div>
               </div>
+              {isLive && activeRate && <p className="rate-note">Tarifa <b>{activeRate.name}</b>: {activeRate.price} € con {activeRate.included_persons} personas incluidas{activeRate.supplement_price ? ` · +${activeRate.supplement_price} € por persona extra` : ""}. El importe final lo confirma el local en puerta.</p>}
               {!tablesCapacityOk && <p className="warning">Faltan mesas: selecciona {tablesNeeded} mesas contiguas para alojar a {draft.people} personas.</p>}
               {!bottleCapacityOk && <p className="warning">Se permiten hasta {maxCapacity} personas con {draft.bottles} botella{draft.bottles === 1 ? "" : "s"}. Revisa personas o botellas.</p>}
               {isConcert && <p className="concert-note">La reserva de botella no incluye la entrada del concierto.</p>}
@@ -568,7 +729,7 @@ export default function Home() {
         <section className="send-bar">
           <div className="fv-logo">F<span>V</span></div>
           <div className="send-copy"><span>Destino</span><b>Fourvenues · TØTEM Punta Umbría</b></div>
-          <div className="send-details"><span><small>Evento</small>{draft.date}</span><span><small>Zona</small>{zoneCopy[draft.zone].label}</span><span><small>{selectedTables.length > 1 ? "Mesas" : "Mesa"}</small>{selectedTablesLabel}</span></div>
+          <div className="send-details"><span><small>Evento</small>{draft.date}</span><span><small>Zona</small>{currentZone?.label}</span><span><small>{selectedTables.length > 1 ? "Mesas" : "Mesa"}</small>{selectedTablesLabel}</span></div>
           <button className="send-button" disabled={!bottleCapacityOk || !tablesCapacityOk || !parsed || !requiredFieldsOk} onClick={() => { setReviewed(false); setReviewOpen(true); }}>Revisar antes de crear <span>→</span></button>
         </section>
       </section>
@@ -586,7 +747,7 @@ export default function Home() {
             <div className="check-list" aria-label="Comprobaciones realizadas">
               <div><span>✓</span><p><b>Solicitud validada</b><small>{detectedFields} campos reconocidos y editables</small></p></div>
               <div><span>✓</span><p><b>Evento localizado</b><small>{draft.date} · {eventName}</small></p></div>
-              <div><span>✓</span><p><b>Zona y tarifa comprobadas</b><small>{zoneCopy[draft.zone].label} · {price} € · adelanto {deposit} €</small></p></div>
+              <div><span>✓</span><p><b>Zona y tarifa comprobadas</b><small>{currentZone?.label} · {price} € · adelanto {deposit} €</small></p></div>
               <div><span>✓</span><p><b>{selectedTables.length > 1 ? "Mesas combinadas preparadas" : "Mesa compatible preparada"}</b><small>{selectedTables.length > 1 ? `Mesas ${selectedTablesLabel}` : `Mesa ${selectedTablesLabel}`} · {combinationUsesInternal ? "incluye venta interna RRPP" : "venta pública"} · {draft.people} personas</small></p></div>
               {canSubmitLive ? (
                 <div><span>✓</span><p><b>Conector Fourvenues activo</b><small>{noCharge ? "Se enviará como SOLICITUD sin cobro (la confirma el local)." : "Se creará la reserva con enlace de pago (checkout)."}</small></p></div>
@@ -600,7 +761,7 @@ export default function Home() {
               <div className="receipt-grid">
                 <p><span>Evento</span><b>{eventName}</b></p>
                 <p><span>Llegada</span><b>{draft.arrival || "Sin hora"}</b></p>
-                <p><span>Ubicación</span><b>{zoneCopy[draft.zone].label} · {selectedTables.length > 1 ? "Mesas" : "Mesa"} {selectedTablesLabel}</b></p>
+                <p><span>Ubicación</span><b>{currentZone?.label} · {selectedTables.length > 1 ? "Mesas" : "Mesa"} {selectedTablesLabel}</b></p>
                 <p><span>Personas / botellas</span><b>{draft.people} / {draft.bottles}</b></p>
                 <p><span>Precio / adelanto</span><b>{price} € / {deposit} €</b></p>
                 <p><span>Referente</span><b>{draft.referral}</b></p>

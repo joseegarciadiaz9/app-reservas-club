@@ -71,6 +71,10 @@ Cuatro reglas que no están claras en la documentación y que costaron un 400 ca
    (`space.rates`) y hay que recolectarlas desde ahí.
 4. **Los nombres de campo no son los esperados**: la zona expone `normalized_name`
    (no `normalized_zone_name`) y el adelanto viene en `deposit.value` (no `amount`).
+5. **`end_date` es exclusivo en `GET /events`.** Pedir
+   `start_date=2026-08-15&end_date=2026-08-15` devuelve **0 eventos** aunque haya
+   uno esa noche (empieza a las 20:00 UTC); hay que cerrar el rango en el día
+   siguiente. Por eso el handler de `?date=` calcula `end_date = date + 1 día`.
 
 Reserva de prueba creada el 10-ago-2026 (`POST /bookings/request`, evento
 `s6btul4wzawkojda76ckexccpo7v10ld`): responde **200** con
