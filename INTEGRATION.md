@@ -41,18 +41,55 @@ Para salir a PRO: pedir la clave de producción, poner `FOURVENUES_ENV=prod` y n
 3. `POST /bookings/checkout` (o `/request`) con la zona, tarifa, mesa e info del cliente.
 4. Fourvenues devuelve `payment_url` (checkout) y gestiona pago, confirmación y QR.
 
+## Estructura REAL de zonas y tarifas en TØTEM
+
+Verificado en el panel de **producción** de TØTEM Punta Umbría (10-ago-2026)
+mirando un evento de fiesta ("Sábado 15 de Agosto") y uno de concierto
+("UKIYØ | MANUEL CORTÉS"). Corrige varias suposiciones del modelo antiguo.
+
+**Las zonas cambian según el tipo de evento:**
+
+| | Evento de fiesta | Evento de concierto |
+| --- | --- | --- |
+| Zonas visibles | PISTA GENERAL (Escenario), EMBARCADERO DEL PINAR | PISTA (CONCIERTO), PINAR |
+| Zonas ocultas | ARENAS | PISTA GENERAL (Escenario), ARENAS |
+
+**Tarifas** (3 personas incluidas + 15 € por persona extra, 50 % de adelanto):
+PRECIO FIESTA (100 € en fiesta / 90 € en concierto), PRECIO PINAR (80 €),
+PRECIO CHILL (70 €), LATERAL ESCENARIO (100 €), FRONT STAGE (130 €).
+Los precios **varían por evento**: hay que leerlos siempre de la API.
+
+**Espacios (mesas)** — todos con capacidad **1–9** personas:
+
+- PISTA GENERAL → `101`–`133` ("Mesa alta"), tarifa PRECIO FIESTA.
+- PINAR → `J1`–`J4` ("**Sofá**") **y** `201`–`224` ("Mesa alta"), todos con PRECIO PINAR.
+
+### Tres correcciones importantes
+
+1. **"Jaima" no es una zona.** `J1`–`J4` son espacios dentro de la zona **PINAR**,
+   con la misma tarifa que las mesas `201`–`224`.
+2. **"Lateral escenario" y "Front Stage" no son zonas**: son **tarifas** dentro de
+   la zona **PISTA (CONCIERTO)**.
+3. **La tarifa no depende del nº de botellas.** Es el precio del reservado. El
+   recargo por hora de llegada (antes/después de 18:30) **no está en las tarifas**;
+   es una regla comercial del local.
+
+El mapeo vive en `ZONE_MAPPINGS` (`app/lib/booking-payload.ts`): cada "zona" de la
+UI es un par **(alias de zona, alias de tarifa)** más un filtro opcional de espacios.
+
 ## Mapeo del modelo de la app → campos de Fourvenues
 
 | App | Fourvenues | Notas |
 | --- | --- | --- |
-| Zona (Pinar, Pista…) | `zone_slug` + `normalized_zone_name` | Vienen de `GET /bookings/zones`. Sustituir las zonas hardcodeadas. |
-| Mesa (201, J1…) | `table_id` = `space._id` | **Solo** si la zona tiene `can_select_client: true`. |
+| Zona (Pinar, Pista…) | `zone_slug` + `normalized_zone_name` | Vía `ZONE_MAPPINGS`; los nombres reales cambian entre fiesta y concierto. |
+| Mesa (201, J1…) | `table_id` = `space._id` | **Solo** si la zona tiene `can_select_client: true`. En producción está **desactivado para clientes**, así que normalmente la mesa la asigna el local y va en notas. |
 | Nº personas | `info.quantity` | — |
 | Cliente | `info.full_name`, `info.email`, `info.phone`, `info.birthdate` | — |
 | Observaciones internas | `observations_client` | El referral (`observations_referral`) no es asignable vía API. |
-| Nº de botellas / precio | **tarifa (`rate_slug`)** | El precio, adelanto e incluidos salen de la tarifa (`rate.price`, `rate.deposit`, `rate.included_persons`). Confirmar con Fourvenues si las botellas son tarifa o producto. |
+| Precio / tarifa | **tarifa (`rate_slug`)** | Se elige por **nombre** (PRECIO PINAR, FRONT STAGE…), no por botellas. Precio, adelanto e incluidos salen de `rate.price`, `rate.deposit`, `rate.included_persons`. |
+| Nº de botellas | `observations_client` (notas) | La tarifa cubre el reservado; el nº de botellas se anota. Pendiente de confirmar con Fourvenues. |
 | Referente / RRPP | canal de ventas | No hay campo de referente por reserva vía API; queda el canal. Alternativa: una clave/canal por RRPP. |
-| Hora de llegada | `observations_client` (notas) | No hay campo específico; va en notas. |
+| Hora de llegada | `observations_client` (notas) | No hay campo específico. Ojo: cada zona define "Horas reservables" en el panel. |
 
 ## Pendiente (a la espera de respuesta de Fourvenues)
 

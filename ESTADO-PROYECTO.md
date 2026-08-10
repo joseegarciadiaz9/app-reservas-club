@@ -106,6 +106,31 @@ Ver `INTEGRATION.md` para el detalle. Resumen:
 Todo compila (los únicos avisos de `tsc` son ambientales: `cloudflare:workers`,
 `Fetcher`, `D1Database`, iguales a los preexistentes en `db/` y `worker/`).
 
+## Clave activa: qué funciona y qué falta en Alpha (10-ago-2026)
+
+La clave llegó por email ("Tu clave API de Channel Manager está lista", enlace de
+**un solo uso**) y está en `.env`. Estado verificado:
+
+- ✅ **Autenticación OK**. `GET /organizations` devuelve "Live Punta Umbría"
+  (`lktvr06j406ty01ks4h2t1c0hzDOo8S9`) y `GET /locations` la ubicación real.
+- ✅ La app muestra **"Conectado a Fourvenues (Alpha)"**.
+- ⚠️ **No hay datos vendibles en Alpha.** Alpha solo tenía eventos pasados
+  (2022-2023). Se copió uno ("Closing Party POWER" → **15-ago-2026**,
+  `s6btul4wzawkojda76ckexccpo7v10ld`) y **sí aparece** en `GET /events`, pero
+  `GET /bookings/zones` devuelve **0 zonas** aunque el evento tiene 139 mesas.
+
+Qué se probó para desbloquear las zonas (sin éxito todavía):
+
+- Activar en la zona **"Pueden reservar → Clientes"** y **"Pueden seleccionar
+  espacios → Clientes"** (este último es el `can_select_client` de la API).
+- El evento **no tiene canales de venta** asignados ("Canales de venta" vacío) y
+  viene con **`is_preregistered: true`** (modo prerregistro, ventas sin abrir):
+  son las dos hipótesis principales para que no haya zonas vendibles.
+
+Pendiente de aclarar con Fourvenues: qué hace falta exactamente para que un evento
+exponga zonas por la Channel Manager API (¿asignar el canal al evento?, ¿desactivar
+prerregistro?, ¿abrir la venta?).
+
 ## Próximos pasos
 
 1. ✅ Admin conseguido y **clave Channel Manager solicitada** en Alpha (`all:read`/`all:write`).

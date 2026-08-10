@@ -112,36 +112,104 @@ function normalize(value: string): string {
     .trim();
 }
 
-/** Localiza la zona real que corresponde a la etiqueta de la UI ("Pinar", …). */
-export function findZone(
-  zones: FourvenuesZone[],
-  zoneLabel: string,
-): FourvenuesZone | undefined {
-  const target = normalize(zoneLabel);
-  return zones.find(
-    (zone) =>
-      normalize(zone.name) === target ||
-      normalize(zone.normalized_zone_name) === target ||
-      normalize(zone.slug) === target ||
-      normalize(zone.name).includes(target) ||
-      target.includes(normalize(zone.name)),
-  );
+/**
+ * Cómo se mapea cada "zona" de la UI a la estructura REAL de Fourvenues.
+ *
+ * Verificado en el panel de producción de TØTEM Punta Umbría (ago 2026). Lo que
+ * la app llama "zona" es en realidad un par **(zona, tarifa)**, y los nombres
+ * cambian entre eventos de fiesta y de concierto:
+ *
+ *  - Fiesta:    PISTA GENERAL (Escenario) · EMBARCADERO DEL PINAR · ARENAS (oculta)
+ *  - Concierto: PISTA (CONCIERTO) · PINAR · PISTA GENERAL y ARENAS ocultas
+ *
+ * Correcciones importantes frente al modelo antiguo:
+ *  - **Jaima no es una zona**: J1–J4 son espacios ("Sofá") dentro de PINAR, con la
+ *    misma tarifa PRECIO PINAR que las mesas 201–224.
+ *  - **Lateral escenario y Front Stage no son zonas**: son tarifas dentro de la
+ *    zona PISTA (CONCIERTO).
+ *  - La tarifa **no depende del nº de botellas**: es el precio del reservado
+ *    (3 personas incluidas + suplemento por persona extra).
+ */
+export interface ZoneMapping {
+  /** Nombres de zona aceptables, en orden de preferencia. */
+  zoneAliases: string[];
+  /** Nombres de tarifa aceptables dentro de esa zona. */
+  rateAliases: string[];
+  /** Si se indica, filtra los espacios de la zona (p. ej. solo jaimas J1–J4). */
+  spacePattern?: RegExp;
+}
+
+export const ZONE_MAPPINGS: Record<string, ZoneMapping> = {
+  pinar: {
+    zoneAliases: ["EMBARCADERO DEL PINAR", "PINAR"],
+    rateAliases: ["PRECIO PINAR"],
+    spacePattern: /^\d+$/,
+  },
+  // Las jaimas comparten zona y tarifa con el Pinar; solo cambian los espacios.
+  jaima: {
+    zoneAliases: ["EMBARCADERO DEL PINAR", "PINAR"],
+    rateAliases: ["PRECIO PINAR"],
+    spacePattern: /^J\d+$/i,
+  },
+  pista: {
+    zoneAliases: ["PISTA GENERAL", "PISTA"],
+    rateAliases: ["PRECIO FIESTA"],
+  },
+  lateral: {
+    zoneAliases: ["PISTA (CONCIERTO)", "PISTA"],
+    rateAliases: ["LATERAL ESCENARIO"],
+  },
+  front: {
+    zoneAliases: ["PISTA (CONCIERTO)", "PISTA"],
+    rateAliases: ["FRONT STAGE"],
+  },
+  arenas: {
+    zoneAliases: ["ARENAS"],
+    rateAliases: ["PRECIO CHILL"],
+  },
+};
+
+function matches(candidate: string, alias: string): boolean {
+  const a = normalize(candidate);
+  const b = normalize(alias);
+  return a === b || a.includes(b) || b.includes(a);
 }
 
 /**
- * Elige la tarifa de una zona. Preferimos la que encaje con el nº de botellas
- * (por nombre/contenido); si no, la primera disponible.
+ * Localiza la zona real a partir de los alias, probándolos en orden y
+ * descartando las zonas ocultas/no disponibles cuando hay alternativa.
+ */
+export function findZone(
+  zones: FourvenuesZone[],
+  aliases: string[],
+): FourvenuesZone | undefined {
+  const usable = zones.filter((zone) => zone.available !== false);
+  for (const pool of [usable, zones]) {
+    for (const alias of aliases) {
+      const hit = pool.find(
+        (zone) =>
+          matches(zone.name, alias) ||
+          matches(zone.normalized_zone_name, alias) ||
+          matches(zone.slug, alias),
+      );
+      if (hit) return hit;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Elige la tarifa por nombre (PRECIO PINAR, FRONT STAGE…). El nº de botellas NO
+ * determina la tarifa; si ningún alias encaja, se usa la primera disponible.
  */
 export function pickRate(
   rates: FourvenuesRate[],
-  bottles?: number,
+  rateAliases: string[] = [],
 ): FourvenuesRate | undefined {
   if (rates.length === 0) return undefined;
-  if (bottles && bottles > 0) {
-    const byBottles = rates.find((rate) =>
-      new RegExp(`\\b${bottles}\\b`).test(`${rate.name} ${rate.content}`),
-    );
-    if (byBottles) return byBottles;
+  for (const alias of rateAliases) {
+    const hit = rates.find((rate) => matches(rate.name, alias) || matches(rate.slug, alias));
+    if (hit) return hit;
   }
   return rates[0];
 }
@@ -149,25 +217,39 @@ export function pickRate(
 /**
  * Resuelve zona + tarifa + mesa reales a partir de la selección de la UI.
  * Devuelve `null` si no encuentra la zona o no hay tarifas (no se puede reservar).
+ *
+ * Ojo: `table_id` solo se envía si la zona expone `can_select_client: true`. En
+ * producción esa opción está desactivada para clientes, así que normalmente la
+ * mesa concreta la asigna el local (y la anotamos en las observaciones).
  */
 export function resolvePlacement(
   zones: FourvenuesZone[],
-  selection: { zoneLabel: string; tableName?: string; bottles?: number },
+  selection: { zoneKey: string; tableName?: string },
 ): ResolvedPlacement | null {
-  const zone = findZone(zones, selection.zoneLabel);
+  const mapping = ZONE_MAPPINGS[selection.zoneKey] ?? {
+    zoneAliases: [selection.zoneKey],
+    rateAliases: [],
+  };
+
+  const zone = findZone(zones, mapping.zoneAliases);
   if (!zone) return null;
 
-  // Las tarifas pueden estar en la zona o en la mesa concreta.
+  const spaces = zone.spaces ?? [];
+  const candidates = mapping.spacePattern
+    ? spaces.filter((space) => mapping.spacePattern!.test(space.name))
+    : spaces;
+
   const spaceMatch = selection.tableName
-    ? zone.spaces.find(
+    ? candidates.find(
         (space) =>
-          normalize(space.name) === normalize(selection.tableName as string) ||
-          normalize(space.normalized_name) === normalize(selection.tableName as string),
+          matches(space.name, selection.tableName as string) ||
+          matches(space.normalized_name, selection.tableName as string),
       )
     : undefined;
 
-  const rates = spaceMatch?.rates?.length ? spaceMatch.rates : zone.rates;
-  const rate = pickRate(rates, selection.bottles);
+  // Las tarifas pueden colgar de la mesa concreta o de la zona.
+  const rates = spaceMatch?.rates?.length ? spaceMatch.rates : zone.rates ?? [];
+  const rate = pickRate(rates, mapping.rateAliases);
   if (!rate) return null;
 
   return {

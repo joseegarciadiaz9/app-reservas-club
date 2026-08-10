@@ -355,9 +355,8 @@ export default function Home() {
     if (!canSubmitLive || !liveEvent || !liveZones) return;
 
     const placement = resolvePlacement(liveZones, {
-      zoneLabel: zoneCopy[draft.zone].label,
+      zoneKey: draft.zone,
       tableName: selectedTables[0],
-      bottles: draft.bottles,
     });
     if (!placement) {
       setSubmit({
