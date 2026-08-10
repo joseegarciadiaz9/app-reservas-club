@@ -56,6 +56,34 @@ wrangler secret put FOURVENUES_API_KEY
 wrangler secret put APP_ACCESS_PASSWORD
 ```
 
+## Lo que exige la API (verificado creando una reserva real en Alpha)
+
+Cuatro reglas que no están claras en la documentación y que costaron un 400 cada una:
+
+1. **Las zonas con "horarios" configurados NO se devuelven.** Si una zona tiene
+   horas reservables definidas (pestaña *Horario* del panel), la Channel Manager
+   API la excluye de `GET /bookings/zones/`. Confirmado por Inacio (Fourvenues):
+   *"como estos horarios no son compatibles con channel manager, se excluyen esas
+   zonas de la respuesta"*. Para vender por API hay que quitarles el horario.
+2. **`zone_slug` y `normalized_zone_name` son excluyentes.** Enviar los dos da
+   `400 "contains a conflict between exclusive peers"`. Se manda solo uno.
+3. **La zona puede no traer `rates`**: entonces las tarifas cuelgan de cada mesa
+   (`space.rates`) y hay que recolectarlas desde ahí.
+4. **Los nombres de campo no son los esperados**: la zona expone `normalized_name`
+   (no `normalized_zone_name`) y el adelanto viene en `deposit.value` (no `amount`).
+
+Reserva de prueba creada el 10-ago-2026 (`POST /bookings/request`, evento
+`s6btul4wzawkojda76ckexccpo7v10ld`): responde **200** con
+`status: "to-review"`, `table_id` aceptado y las observaciones completas. Es
+justo el comportamiento que buscábamos para las reservas sin cobro: **queda
+pendiente de que el local la confirme y no se cobra nada automáticamente**.
+
+Sobre el descuadre de precio que nos preocupaba: las propias tarifas lo aclaran en
+su campo `conditions` — *"El precio total que recibe es calculado por la aplicación
+de manera automática como si el grupo llegara a las 22:00h… El precio total y final
+se calculará en puerta por nuestro personal según la hora de llegada"*. O sea, el
+precio de la API es orientativo por diseño del local.
+
 ## Flujo de creación de una reserva
 
 1. `GET /events?date=...` → localizar el `event_id` de la fecha.

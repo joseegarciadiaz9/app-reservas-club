@@ -74,43 +74,60 @@ function readEnvBag(): Record<string, string | undefined> {
 // Tipos de la API
 // ---------------------------------------------------------------------------
 
+/**
+ * Formas verificadas contra la respuesta real de `GET /bookings/zones/` en Alpha
+ * (10-ago-2026). Ojo con dos detalles que no son los que cabría esperar:
+ * la zona expone `normalized_name` (no `normalized_zone_name`) y puede **no
+ * traer `rates`**: en ese caso las tarifas cuelgan de cada mesa.
+ */
 export interface FourvenuesRate {
   _id: string;
   slug: string;
   name: string;
   /** Descripción de la tarifa, p. ej. "1 botella de champán. VIP con sofá". */
   content: string;
-  max_clients: number;
+  /** Condiciones en texto (el local suele aclarar aquí cómo se calcula el precio final). */
+  conditions?: string;
   price: number;
   included_persons: number;
   supplement_persons: number;
   supplement_price: number;
+  fee_type?: "percentage" | "fixed";
+  fee_quantity?: number;
+  internal_description?: string;
   full_payment: boolean;
-  deposit: { type: "fixed" | "percentage"; amount: number };
+  /** El importe viene en `value` (no en `amount`). */
+  deposit: { type: "fixed" | "percentage"; value: number };
 }
 
 export interface FourvenuesSpace {
   /** Este `_id` es el `table_id` que se envía al crear la reserva. */
   _id: string;
   name: string;
-  capacity: number;
   normalized_name: string;
-  position: { x: number; y: number; scale: number; rotation: number; radius: number };
-  rates: FourvenuesRate[];
+  capacity: number;
+  minimum?: number;
+  position?: { x: number; y: number; scale?: number; rotation?: number; radius?: number };
+  blocked?: boolean;
+  hidden?: boolean;
   available: boolean;
+  rates: FourvenuesRate[];
 }
 
 export interface FourvenuesZone {
-  id: string;
+  _id: string;
   available: boolean;
   slug: string;
   name: string;
-  normalized_zone_name: string;
+  /** Slug legible de la zona; es lo que se envía como `normalized_zone_name`. */
+  normalized_name: string;
   /** Si true, se puede fijar `table_id` en la reserva. */
   can_select_client: boolean;
   is_full: boolean;
   spaces: FourvenuesSpace[];
-  rates: FourvenuesRate[];
+  /** Puede no venir: entonces las tarifas están en cada mesa. */
+  rates?: FourvenuesRate[];
+  has_discount_codes_enabled?: boolean;
 }
 
 export interface FourvenuesBilling {
@@ -158,8 +175,12 @@ export interface FourvenuesBooking {
 
 export interface CreateBookingBase {
   event_id: string;
-  zone_slug: string;
-  normalized_zone_name: string;
+  /**
+   * `zone_slug` y `normalized_zone_name` son **excluyentes**: la API responde
+   * 400 ("exclusive peers") si se envían los dos. Se manda solo uno.
+   */
+  zone_slug?: string;
+  normalized_zone_name?: string;
   rate_slug: string;
   /** Solo permitido si la zona tiene `can_select_client: true`. */
   table_id?: string;

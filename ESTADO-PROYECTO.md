@@ -127,9 +127,23 @@ Qué se probó para desbloquear las zonas (sin éxito todavía):
   viene con **`is_preregistered: true`** (modo prerregistro, ventas sin abrir):
   son las dos hipótesis principales para que no haya zonas vendibles.
 
-Pendiente de aclarar con Fourvenues: qué hace falta exactamente para que un evento
-exponga zonas por la Channel Manager API (¿asignar el canal al evento?, ¿desactivar
-prerregistro?, ¿abrir la venta?).
+**Resuelto (10-ago, respuesta de Inacio):** la causa eran los **horarios de las
+zonas**. Una zona con horas reservables configuradas no es compatible con la
+Channel Manager y se excluye de la respuesta. Inacio quitó los horarios a la zona
+del evento de prueba y las zonas empezaron a devolverse.
+
+Con eso se completó la primera **reserva real end-to-end** en Alpha
+(`POST /bookings/request` → `200`, `status: "to-review"`, mesa J1 asignada y
+observaciones correctas), visible en el panel como "Pendiente 65,00 €".
+
+⚠️ **Riesgo para producción, a verificar:** si las zonas reales de TØTEM tienen
+horarios configurados, tampoco se verán por API. Habría que quitárselos, y eso
+afecta a su operativa normal (las horas de llegada se gestionan en el panel).
+Conviene comprobarlo antes de prometer fechas.
+
+Sigue **sin respuesta** la segunda pregunta del correo: si la clave de producción
+debe generarse desde la organización **TØTEM Punta Umbría** (la de Alpha es de
+"Live Punta Umbría") y qué proceso hay para obtenerla.
 
 ## Próximos pasos
 

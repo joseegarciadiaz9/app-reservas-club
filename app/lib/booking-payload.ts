@@ -15,6 +15,7 @@ import type {
   CreateCheckoutInput,
   FourvenuesBookingInfo,
   FourvenuesRate,
+  FourvenuesSpace,
   FourvenuesZone,
 } from "./fourvenues";
 
@@ -169,9 +170,12 @@ export const ZONE_MAPPINGS: Record<string, ZoneMapping> = {
   },
 };
 
-function matches(candidate: string, alias: string): boolean {
-  const a = normalize(candidate);
+function matches(candidate: string | undefined | null, alias: string): boolean {
+  const a = normalize(candidate ?? "");
   const b = normalize(alias);
+  // Sin esto, un campo vacío haría match con CUALQUIER alias (la cadena vacía es
+  // subcadena de todo) y se acabaría reservando en la zona equivocada.
+  if (!a || !b) return false;
   return a === b || a.includes(b) || b.includes(a);
 }
 
@@ -189,13 +193,39 @@ export function findZone(
       const hit = pool.find(
         (zone) =>
           matches(zone.name, alias) ||
-          matches(zone.normalized_zone_name, alias) ||
+          matches(zone.normalized_name ?? "", alias) ||
           matches(zone.slug, alias),
       );
       if (hit) return hit;
     }
   }
   return undefined;
+}
+
+/** Mesas realmente vendibles: ni bloqueadas, ni ocultas, ni sin disponibilidad. */
+export function sellableSpaces(zone: FourvenuesZone): FourvenuesSpace[] {
+  return (zone.spaces ?? []).filter(
+    (space) => space.available !== false && !space.blocked && !space.hidden,
+  );
+}
+
+/**
+ * Tarifas aplicables a una zona. Muchas zonas NO traen `rates`: en ese caso las
+ * tarifas cuelgan de cada mesa y hay que recolectarlas (sin duplicar).
+ */
+export function zoneRates(zone: FourvenuesZone): FourvenuesRate[] {
+  if (zone.rates?.length) return zone.rates;
+  const seen = new Set<string>();
+  const collected: FourvenuesRate[] = [];
+  for (const space of sellableSpaces(zone)) {
+    for (const rate of space.rates ?? []) {
+      const key = rate.slug || rate._id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      collected.push(rate);
+    }
+  }
+  return collected;
 }
 
 /**
@@ -234,7 +264,7 @@ export function resolvePlacement(
   const zone = findZone(zones, mapping.zoneAliases);
   if (!zone) return null;
 
-  const spaces = zone.spaces ?? [];
+  const spaces = sellableSpaces(zone);
   const candidates = mapping.spacePattern
     ? spaces.filter((space) => mapping.spacePattern!.test(space.name))
     : spaces;
@@ -243,18 +273,20 @@ export function resolvePlacement(
     ? candidates.find(
         (space) =>
           matches(space.name, selection.tableName as string) ||
-          matches(space.normalized_name, selection.tableName as string),
+          matches(space.normalized_name ?? "", selection.tableName as string),
       )
     : undefined;
 
   // Las tarifas pueden colgar de la mesa concreta o de la zona.
-  const rates = spaceMatch?.rates?.length ? spaceMatch.rates : zone.rates ?? [];
+  const rates = spaceMatch?.rates?.length ? spaceMatch.rates : zoneRates(zone);
   const rate = pickRate(rates, mapping.rateAliases);
   if (!rate) return null;
 
   return {
     zone_slug: zone.slug,
-    normalized_zone_name: zone.normalized_zone_name,
+    // La API devuelve `normalized_name`; el payload lo espera como
+    // `normalized_zone_name`. Si faltara, el slug sirve de respaldo.
+    normalized_zone_name: zone.normalized_name || zone.slug,
     rate_slug: rate.slug,
     table_id: zone.can_select_client ? spaceMatch?._id : undefined,
     rate,
@@ -275,12 +307,18 @@ export interface BuildBookingArgs {
   discountCode?: string;
 }
 
-/** Payload común a `checkout` y `request`. */
+/**
+ * Payload común a `checkout` y `request`.
+ *
+ * `zone_slug` y `normalized_zone_name` son excluyentes en la API (400
+ * "exclusive peers" si van los dos), así que se manda solo el slug, y el
+ * nombre normalizado únicamente como respaldo si no hubiera slug.
+ */
 function buildBase(args: BuildBookingArgs): CreateBookingBase {
+  const { zone_slug, normalized_zone_name } = args.placement;
   return {
     event_id: args.eventId,
-    zone_slug: args.placement.zone_slug,
-    normalized_zone_name: args.placement.normalized_zone_name,
+    ...(zone_slug ? { zone_slug } : { normalized_zone_name }),
     rate_slug: args.placement.rate_slug,
     table_id: args.placement.table_id,
     external_channel_id: args.externalChannelId,

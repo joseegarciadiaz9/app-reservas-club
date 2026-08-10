@@ -56,8 +56,10 @@ export async function POST(request: Request): Promise<Response> {
 function requiredFieldErrors(body: BookingBody): string[] {
   const missing: string[] = [];
   if (!body.event_id) missing.push("event_id");
-  if (!body.zone_slug) missing.push("zone_slug");
-  if (!body.normalized_zone_name) missing.push("normalized_zone_name");
+  // La API los trata como excluyentes: basta (y hace falta) uno de los dos.
+  if (!body.zone_slug && !body.normalized_zone_name) {
+    missing.push("zone_slug o normalized_zone_name");
+  }
   if (!body.rate_slug) missing.push("rate_slug");
   if (!body.info) {
     missing.push("info");
