@@ -443,7 +443,17 @@ export default function Home() {
         <div className="profile">
           <div className="avatar">JG</div>
           <div><strong>Jose Garcia</strong><span>Administrador · TØTEM</span></div>
-          <button aria-label="Abrir perfil">•••</button>
+          <button
+            className="logout-button"
+            aria-label="Cerrar sesión"
+            title="Cerrar sesión"
+            onClick={async () => {
+              await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+              window.location.replace("/login");
+            }}
+          >
+            ⏻
+          </button>
         </div>
       </aside>
 

@@ -218,6 +218,14 @@ button { cursor: pointer; }
 .blocked-action { width: 100%; border: 0; border-radius: 9px; padding: 12px; color: #737a83; background: #e8e5df; font-size: 9px; font-weight: 800; cursor: not-allowed; }
 .duplicate-note { margin: 8px 4px 0; color: #95652d; font-size: 8px; line-height: 1.45; text-align: center; }
 .modal-action.secondary { margin-top: 10px; color: var(--ink); border: 1px solid var(--line); background: white; }
+.login-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--paper); }
+.login-card { width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 13px; padding: 28px 26px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.82); box-shadow: 0 14px 40px rgba(42,46,54,.07); }
+.login-brand { display: flex; align-items: baseline; gap: 8px; color: var(--ink); }
+.login-card h1 { margin: 6px 0 0; font-size: 19px; }
+.login-note { margin: 0; color: var(--ink-soft); font-size: 9px; line-height: 1.5; }
+.login-error { margin: 0; padding: 9px 11px; border: 1px solid #f1cec6; border-radius: 9px; color: #a3341f; background: #fbe9e5; font-size: 9px; font-weight: 700; }
+.login-card .analyze-button:disabled { opacity: .55; }
+.logout-button { border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; }
 .modal-action.primary { background: var(--green); box-shadow: 0 7px 14px rgba(38,117,92,.18); }
 .modal-action.primary:disabled { background: #e8e5df; color: #737a83; box-shadow: none; cursor: not-allowed; }
 .submit-result { margin-top: 12px; padding: 11px 12px; border-radius: 10px; font-size: 9px; font-weight: 700; line-height: 1.45; }

@@ -34,6 +34,28 @@ Copia `.env.example` a `.env` (o `.dev.vars` para Wrangler) y rellena:
 En producción se define como *secret* del Worker (`wrangler secret put FOURVENUES_API_KEY`).
 Para salir a PRO: pedir la clave de producción, poner `FOURVENUES_ENV=prod` y no tocar nada más.
 
+## Control de acceso (obligatorio antes de desplegar)
+
+La herramienta crea reservas reales, así que no puede quedar abierta en internet.
+La puerta está en **`worker/access.ts`**, aplicada desde `worker/index.ts`, que es
+el único punto de entrada: protege **páginas y Route Handlers** por igual (no se
+puede colar nadie llamando directamente a `/api/fourvenues/bookings`).
+
+- Contraseña compartida en `APP_ACCESS_PASSWORD`; sesión en cookie firmada
+  (HMAC-SHA256, `HttpOnly`, `SameSite=Lax`, `Secure` en https) que dura 12 h.
+- Rutas públicas: `/login`, `/api/auth/login` y los assets estáticos.
+- Sin sesión: las páginas redirigen a `/login` y las rutas `/api/*` responden 401.
+- **Fail-closed**: si hay `FOURVENUES_API_KEY` pero no `APP_ACCESS_PASSWORD`, la app
+  devuelve 503 en todo en lugar de servirse sin protección. Sin clave y sin
+  contraseña queda abierta, para poder enseñar la demo en modo simulación.
+
+Al desplegar hay que definir **dos** secrets, no solo la clave:
+
+```
+wrangler secret put FOURVENUES_API_KEY
+wrangler secret put APP_ACCESS_PASSWORD
+```
+
 ## Flujo de creación de una reserva
 
 1. `GET /events?date=...` → localizar el `event_id` de la fecha.

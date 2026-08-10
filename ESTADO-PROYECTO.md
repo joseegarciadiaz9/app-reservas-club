@@ -143,3 +143,6 @@ prerregistro?, ¿abrir la venta?).
    "no cobrar / 0 €": adjuntar las notas del RRPP a `observations_client` y usar el flujo
    **`request`** (lo confirma el venue), así se omiten las dudas de precio con Fourvenues.
 6. Validar end-to-end en Alpha; luego pedir claves de producción y **acotar los permisos**.
+7. ✅ **Control de acceso hecho** (`worker/access.ts`): contraseña + cookie firmada,
+   cubre páginas y `/api/*`, con fail-closed si hay clave y no hay contraseña.
+   Al desplegar: `wrangler secret put FOURVENUES_API_KEY` **y** `APP_ACCESS_PASSWORD`.

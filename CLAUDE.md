@@ -40,5 +40,8 @@ valor a `FOURVENUES_API_KEY` en `.env` y `FOURVENUES_ENV=alpha`.
 ## Reglas al trabajar aquí
 
 - No exponer la API key en código cliente ni en el repo.
+- El acceso se controla en `worker/access.ts` (contraseña + cookie firmada) y cubre
+  páginas y `/api/*`. Cualquier ruta nueva queda protegida por defecto: si necesita
+  ser pública, hay que añadirla a `isPublicPath` a conciencia.
 - No dar por buenos datos hardcodeados de zonas/mesas/precios: deben venir de `GET /bookings/zones`.
 - El referente/RRPP no se puede fijar por reserva vía API (queda el canal de ventas); hora de llegada y extras van en notas.
