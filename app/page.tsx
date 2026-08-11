@@ -62,18 +62,8 @@ type BookingDraft = {
   bottlesNote?: string;
 };
 
-const initialRequest = `*TØTEM*
-*Formulario de reserva*
-*Copie, pegue y rellene estos datos por favor*
-
-*Fecha:* 1/08/2026
-*Un nombre y apellidos:* Rafael Márquez Sánchez
-*Nº de personas:* 8
-*Teléfono:* 617882780
-*Correo Electrónico:* rafamarsan1996@gmail.com
-*Zona preferida:* Zona Pinar (Arriba)
-*Hora de llegada:* 18:00
-*Nº de botellas:* 3`;
+/** La app arranca en blanco: el RRPP pega aquí la solicitud del cliente. */
+const initialRequest = "";
 
 const largeGroupRequest = `*TØTEM*
 *Formulario de reserva*
@@ -89,16 +79,18 @@ const largeGroupRequest = `*TØTEM*
 *Observaciones:* Prueba interna de mesas combinadas`;
 
 const defaultDraft: BookingDraft = {
-  date: "01/08/2026",
-  fullName: "Rafael Márquez Sánchez",
-  people: 8,
-  phone: "617882780",
-  email: "rafamarsan1996@gmail.com",
+  date: "",
+  fullName: "",
+  people: 0,
+  phone: "",
+  email: "",
   zone: "pinar",
-  arrival: "18:00",
-  bottles: 3,
+  arrival: "",
+  bottles: 0,
   observations: "",
-  referral: "Jose Garcia",
+  // Sin preseleccionar a nadie: la app la comparten todos los RRPP y dejar un
+  // nombre fijo atribuiría las reservas a quien no es.
+  referral: "Sin asignar",
   bottlesNote: "",
 };
 
@@ -328,9 +320,9 @@ function eventForDate(date: string) {
 export default function Home() {
   const [rawRequest, setRawRequest] = useState(initialRequest);
   const [draft, setDraft] = useState<BookingDraft>(defaultDraft);
-  const [detectedFields, setDetectedFields] = useState(8);
-  const [parsed, setParsed] = useState(true);
-  const [selectedTables, setSelectedTables] = useState<string[]>(["201"]);
+  const [detectedFields, setDetectedFields] = useState(0);
+  const [parsed, setParsed] = useState(false);
+  const [selectedTables, setSelectedTables] = useState<string[]>([]);
   const [combineMode, setCombineMode] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewed, setReviewed] = useState(false);
@@ -432,7 +424,8 @@ export default function Home() {
   const eventName = liveEvent?.name || eventForDate(draft.date);
   // El desplegable solo aparece con datos reales; en simulación se pinta el texto.
   const eventPickerOptions = liveEvents ?? [];
-  const noLiveEvent = Boolean(integration?.configured) && !liveEvent;
+  // Solo avisamos de "sin evento" si ya hay fecha; con la app en blanco no.
+  const noLiveEvent = Boolean(integration?.configured) && Boolean(draft.date) && !liveEvent;
 
   // Si el formulario trae un referente que no está en la lista, se conserva como
   // opción extra en vez de descartarlo en silencio.
@@ -456,7 +449,7 @@ export default function Home() {
     currentTables.find((item) => item.name === table)?.capacity ?? tableCapacity;
 
   const sellableCount = currentTables.filter((table) => table.status !== "blocked").length;
-  const selectedTablesLabel = selectedTables.join(" + ");
+  const selectedTablesLabel = selectedTables.join(" + ") || "sin elegir";
   const combinationUsesInternal = selectedTables.some((table) => statusOf(table) === "internal");
   const perTableCapacity = currentTables[0]?.capacity ?? tableCapacity;
   const tablesNeeded = Math.max(1, Math.ceil(draft.people / perTableCapacity));
@@ -722,7 +715,7 @@ export default function Home() {
             <p className="test-description">Analiza el formulario, valida la zona y deja preparada la reserva para Fourvenues.</p>
           </div>
           <div className="event-chip">
-            <span className="event-date"><b>{draft.date.slice(0, 2)}</b>{monthLabel(draft.date)}</span>
+            <span className="event-date">{draft.date ? <><b>{draft.date.slice(0, 2)}</b>{monthLabel(draft.date)}</> : <b>·</b>}</span>
             <span>
               <small>{eventPickerOptions.length > 1 ? `${eventPickerOptions.length} eventos ese día` : "Evento localizado"}</small>
               {eventPickerOptions.length > 0 ? (
@@ -761,6 +754,7 @@ export default function Home() {
 
             <textarea
               aria-label="Mensaje de reserva"
+              placeholder="Pega aquí el formulario que te ha enviado el cliente por WhatsApp…"
               value={rawRequest}
               onChange={(event) => { setRawRequest(event.target.value); setParsed(false); }}
               className="request-box"
@@ -776,7 +770,7 @@ export default function Home() {
                 <label className="field"><span>Personas</span><input type="number" min="1" value={draft.people} onChange={(e) => updatePeople(Number(e.target.value))} /></label>
                 <label className="field"><span>Botellas</span><input type="number" min="1" value={draft.bottles} onChange={(e) => updateDraft("bottles", Number(e.target.value))} />{draft.bottlesNote && <small className="field-hint">El formulario decía «{draft.bottlesNote}»: se enviará ese texto, no el número.</small>}</label>
                 <label className="field"><span>Teléfono</span><input value={draft.phone} onChange={(e) => updateDraft("phone", e.target.value)} /></label>
-                <label className="field"><span>Correo electrónico</span><input type="email" value={draft.email} onChange={(e) => updateDraft("email", e.target.value)} />{!emailOk && <small className="field-error">Fourvenues rechazará la reserva si el correo no es válido. Revísalo en el mensaje del cliente.</small>}</label>
+                <label className="field"><span>Correo electrónico</span><input type="email" value={draft.email} onChange={(e) => updateDraft("email", e.target.value)} />{draft.email.trim() !== "" && !emailOk && <small className="field-error">Fourvenues rechazará la reserva si el correo no es válido. Revísalo en el mensaje del cliente.</small>}</label>
                 <label className="field"><span>Referente / RRPP</span><select value={draft.referral} onChange={(e) => updateDraft("referral", e.target.value)}>{referralOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
                 <label className="field wide"><span>Observaciones internas {needsReview && <em className="no-charge-badge">{noCharge ? "Sin cobro detectado" : "A copas · revisa el local"}</em>}</span><textarea value={draft.observations} placeholder="Ej.: No pagan entrada, botella Martin Miller gratis" onChange={(e) => updateDraft("observations", e.target.value)} />{needsReview && <small className="field-hint">Se enviará como solicitud: queda &quot;A revisar&quot; en Fourvenues y el local ajusta el importe. Sin cobro automático.</small>}</label>
               </div>
