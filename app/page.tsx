@@ -420,7 +420,8 @@ export default function Home() {
   const price = livePricing?.price ?? simulatedPrice;
   const deposit = livePricing?.deposit ?? Math.round(price / 2);
   const maxCapacity = draft.bottles * 4;
-  const bottleCapacityOk = draft.people <= maxCapacity;
+  // Sin botellas ("a copas") no aplica el máximo de personas por botella.
+  const bottleCapacityOk = Boolean(draft.bottlesNote) || draft.people <= maxCapacity;
   const requiredFieldsOk = Boolean(draft.date && draft.fullName && draft.email && draft.people && draft.bottles);
 
   // "No cobrar / 0 €": se detecta por las notas y decide el flujo (request vs checkout).
@@ -681,7 +682,7 @@ export default function Home() {
                 <label className="field"><span>Fecha</span><input value={draft.date} onChange={(e) => updateDraft("date", normalizeDate(e.target.value))} /></label>
                 <label className="field"><span>Hora de llegada</span><input type="time" value={draft.arrival} onChange={(e) => updateDraft("arrival", e.target.value)} /></label>
                 <label className="field"><span>Personas</span><input type="number" min="1" value={draft.people} onChange={(e) => updatePeople(Number(e.target.value))} /></label>
-                <label className="field"><span>Botellas</span><input type="number" min="1" value={draft.bottles} onChange={(e) => updateDraft("bottles", Number(e.target.value))} /></label>
+                <label className="field"><span>Botellas</span><input type="number" min="1" value={draft.bottles} onChange={(e) => updateDraft("bottles", Number(e.target.value))} />{draft.bottlesNote && <small className="field-hint">El formulario decía «{draft.bottlesNote}»: se enviará ese texto, no el número.</small>}</label>
                 <label className="field"><span>Teléfono</span><input value={draft.phone} onChange={(e) => updateDraft("phone", e.target.value)} /></label>
                 <label className="field"><span>Correo electrónico</span><input type="email" value={draft.email} onChange={(e) => updateDraft("email", e.target.value)} /></label>
                 <label className="field"><span>Referente / RRPP</span><select value={draft.referral} onChange={(e) => updateDraft("referral", e.target.value)}>{referralOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
@@ -812,7 +813,7 @@ export default function Home() {
                 <p><span>Evento</span><b>{eventName}</b></p>
                 <p><span>Llegada</span><b>{draft.arrival || "Sin hora"}</b></p>
                 <p><span>Ubicación</span><b>{currentZone?.label} · {selectedTables.length > 1 ? "Mesas" : "Mesa"} {selectedTablesLabel}</b></p>
-                <p><span>Personas / botellas</span><b>{draft.people} / {draft.bottles}</b></p>
+                <p><span>Personas / botellas</span><b>{draft.people} / {draft.bottlesNote || draft.bottles}</b></p>
                 <p><span>Precio / adelanto</span><b>{price} € / {deposit} €</b></p>
                 <p><span>Referente</span><b>{draft.referral}</b></p>
               </div>
