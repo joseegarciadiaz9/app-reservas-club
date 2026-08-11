@@ -103,13 +103,22 @@ copas", `placementForZone({ preferNoCharge: true })` elige una tarifa que cumpla
 a copas, cortesía…). Si no existe, se comporta como siempre: reserva normal en
 modo `request` con el aviso en las notas, para que el local pulse "Invitación".
 
-> ⚠️ **Ojo antes de crear esa tarifa.** Las tarifas **no tienen ajuste de
-> visibilidad**: heredan el de la zona ("Pueden reservar: Clientes / Usuarios
-> profesionales / Colaboradores"). Las zonas de TØTEM tienen **Clientes activado**
-> —que es lo que permite que la Channel Manager API las vea—, así que una tarifa
-> a 0 € en ellas **también se ofrecería en la web pública**. Antes de usarla hay
-> que confirmar con Fourvenues cómo exponerla solo a la app (p. ej. una zona
-> reservada a profesionales, si la API sigue viéndola).
+> ⚠️ **Hoy no hay forma segura de crear esa tarifa.** Comprobado en Alpha
+> (11-ago-2026): **la Channel Manager API cuenta como "cliente"**. Al desactivar
+> "Pueden reservar → Clientes" en una zona, la zona **se sigue devolviendo** en
+> `GET /bookings/zones`, pero al reservar responde
+> `400 "You are not authorized to reserve a table for this zone"`.
+>
+> Es decir: **todo lo que la app pueda reservar, un cliente también puede
+> reservarlo desde la web**. Y como las tarifas heredan la visibilidad de la
+> zona, una tarifa a 0 € quedaría expuesta al público. No se puede esconder.
+>
+> La única alternativa que queda sería un **código de descuento del 100 %**
+> enviado en `discount_code` (habría que activar los códigos en la zona:
+> ahora `has_discount_codes_enabled: false`). Es secreto por naturaleza, pero si
+> se filtra cualquiera reservaría gratis. Mientras tanto, lo seguro es lo que ya
+> hace la app: crear la reserva como `request` con el aviso en las notas y que el
+> local pulse "Invitación" al confirmarla.
 
 ## Flujo de creación de una reserva
 

@@ -331,10 +331,15 @@ export function placementForZone(
  * Se exige que el precio sea 0 **y** que el nombre lo identifique como tal, para
  * no coger por error una tarifa a 0 € creada con otro fin.
  *
- * ⚠️ Antes de crear esa tarifa en el panel hay que tener en cuenta que las
- * tarifas NO tienen ajuste de visibilidad: heredan el de la zona. En una zona
- * donde "Clientes" puede reservar (que es como están las de TØTEM, y lo que
- * permite que la API las vea), la tarifa se ofrecería también en la web pública.
+ * ⚠️ **Hoy esa tarifa no se puede tener de forma segura.** Las tarifas no tienen
+ * visibilidad propia (heredan la de la zona) y, comprobado en Alpha, la API
+ * cuenta como "cliente": si la zona no deja reservar a clientes, la reserva
+ * falla con `400 "You are not authorized to reserve a table for this zone"`.
+ * O sea, todo lo que la app puede reservar es también reservable desde la web
+ * pública, así que una tarifa a 0 € quedaría expuesta.
+ *
+ * Esta función se mantiene por si en el futuro hay una vía segura; mientras no
+ * exista la tarifa, el comportamiento no cambia.
  */
 const NO_CHARGE_RATE_PATTERNS: RegExp[] = [
   /invitaci[oó]n/i,
