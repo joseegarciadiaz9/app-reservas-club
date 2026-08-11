@@ -36,18 +36,44 @@ const NO_CHARGE_PATTERNS: RegExp[] = [
   /\b0\s*eur/i,
 ];
 
+/**
+ * Reservas con precio distinto al de la tarifa, aunque NO sean gratis: mesas
+ * "a copas" (sin botella), consumición mínima… El importe hay que ajustarlo a
+ * mano, así que tampoco pueden salir con enlace de pago automático.
+ */
+const SPECIAL_PRICING_PATTERNS: RegExp[] = [
+  /a\s*copas/i,
+  /solo\s+copas/i,
+  /sin\s+botella/i,
+  /consumici[oó]n\s+m[ií]nima/i,
+];
+
 /** True si las notas del RRPP indican que la reserva va sin cobro. */
 export function detectNoCharge(text: string | undefined | null): boolean {
   if (!text) return false;
   return NO_CHARGE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
+/** True si el precio no es el de la tarifa (mesa a copas, mínimo…). */
+export function detectSpecialPricing(text: string | undefined | null): boolean {
+  if (!text) return false;
+  return SPECIAL_PRICING_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 /**
- * Reservas sin cobro → `request` (las acepta el local, sin pago automático).
- * El resto → `checkout` (genera enlace de pago).
+ * ¿Tiene que revisarla el local antes de cobrar nada? Tanto las invitaciones
+ * como las mesas a copas: en ambos casos el importe no es el de la tarifa.
  */
-export function resolveBookingMode(noCharge: boolean): BookingMode {
-  return noCharge ? "request" : "checkout";
+export function needsVenueReview(text: string | undefined | null): boolean {
+  return detectNoCharge(text) || detectSpecialPricing(text);
+}
+
+/**
+ * Lo que necesita revisión va por `request` (queda "A revisar" en el panel, sin
+ * cobro automático). El resto por `checkout`, que genera el enlace de pago.
+ */
+export function resolveBookingMode(review: boolean): BookingMode {
+  return review ? "request" : "checkout";
 }
 
 export interface ObservationParts {
@@ -59,6 +85,10 @@ export interface ObservationParts {
   /** Observaciones internas escritas por el RRPP. */
   internalNotes?: string;
   noCharge?: boolean;
+  /** Precio distinto al de la tarifa (a copas, mínimo…). */
+  specialPricing?: boolean;
+  /** Texto de botellas cuando no es un número ("A copas"). */
+  bottlesNote?: string;
 }
 
 /**
@@ -71,9 +101,14 @@ export function composeClientObservations(parts: ObservationParts): string {
 
   if (parts.noCharge) {
     lines.push("⚠️ RESERVA SIN COBRO — no cobrar / adelanto 0 € (confirmar en el panel).");
+  } else if (parts.specialPricing) {
+    // Sin botella el importe no es el de la tarifa: lo ajusta el local.
+    lines.push("⚠️ MESA A COPAS (sin botella) — revisar el importe antes de confirmar.");
   }
   if (parts.arrival) lines.push(`Hora de llegada: ${parts.arrival}`);
-  if (typeof parts.bottles === "number" && parts.bottles > 0) {
+  if (parts.bottlesNote) {
+    lines.push(`Botellas: ${parts.bottlesNote}`);
+  } else if (typeof parts.bottles === "number" && parts.bottles > 0) {
     lines.push(`Botellas: ${parts.bottles}`);
   }
   if (parts.tables && parts.tables.length > 1) {

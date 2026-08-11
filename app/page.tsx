@@ -15,6 +15,8 @@ import {
   buildRequestInput,
   composeClientObservations,
   detectNoCharge,
+  detectSpecialPricing,
+  needsVenueReview,
   findZone,
   placementForZone,
   priceForRate,
@@ -56,6 +58,8 @@ type BookingDraft = {
   bottles: number;
   observations: string;
   referral: string;
+  /** Texto de "botellas" cuando no es un número, p. ej. "A copas". */
+  bottlesNote?: string;
 };
 
 const initialRequest = `*TØTEM*
@@ -95,6 +99,7 @@ const defaultDraft: BookingDraft = {
   bottles: 3,
   observations: "",
   referral: "Jose Garcia",
+  bottlesNote: "",
 };
 
 const zoneCopy: Record<Zone, { label: string; subtitle: string; prefix: string }> = {
@@ -239,6 +244,9 @@ function parseRequest(text: string, previous: BookingDraft) {
       zone: preferredZone ? zoneFrom(preferredZone) : previous.zone,
       arrival: arrival.match(/[0-2]?\d:\d{2}/)?.[0] || previous.arrival,
       bottles: bottles ? Number(bottles.match(/\d+/)?.[0]) || previous.bottles : previous.bottles,
+      // "A copas", "sin botella"… no son un número: se conserva el texto tal cual
+      // en vez de perderlo, y sirve para detectar que la revisa el local.
+      bottlesNote: bottles && !/\d/.test(bottles) ? bottles : "",
       observations: observations || previous.observations,
       referral: referral || previous.referral,
     },
@@ -390,8 +398,12 @@ export default function Home() {
   const requiredFieldsOk = Boolean(draft.date && draft.fullName && draft.email && draft.people && draft.bottles);
 
   // "No cobrar / 0 €": se detecta por las notas y decide el flujo (request vs checkout).
-  const noCharge = detectNoCharge(draft.observations);
-  const bookingMode = resolveBookingMode(noCharge);
+  // "No cobrar" y "a copas" van igual: las revisa el local antes de cobrar.
+  const reviewText = `${draft.observations} ${draft.bottlesNote ?? ""}`;
+  const noCharge = detectNoCharge(reviewText);
+  const specialPricing = detectSpecialPricing(reviewText);
+  const needsReview = needsVenueReview(reviewText);
+  const bookingMode = resolveBookingMode(needsReview);
   const canSubmitLive = Boolean(integration?.configured && liveEvent && liveZones?.length);
 
   function updateDraft<K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) {
@@ -505,11 +517,13 @@ export default function Home() {
 
     const observations = composeClientObservations({
       arrival: draft.arrival,
-      bottles: draft.bottles,
+      bottles: draft.bottlesNote ? undefined : draft.bottles,
+      bottlesNote: draft.bottlesNote,
       referral: draft.referral,
       tables: selectedTables,
       internalNotes: draft.observations,
       noCharge,
+      specialPricing,
     });
     const info = {
       full_name: draft.fullName,
@@ -645,7 +659,7 @@ export default function Home() {
                 <label className="field"><span>Teléfono</span><input value={draft.phone} onChange={(e) => updateDraft("phone", e.target.value)} /></label>
                 <label className="field"><span>Correo electrónico</span><input type="email" value={draft.email} onChange={(e) => updateDraft("email", e.target.value)} /></label>
                 <label className="field"><span>Referente / RRPP</span><select value={draft.referral} onChange={(e) => updateDraft("referral", e.target.value)}><option>Jose Garcia</option><option>RAUL ALFONSO</option><option>Sin asignar</option></select></label>
-                <label className="field wide"><span>Observaciones internas {noCharge && <em className="no-charge-badge">Sin cobro detectado</em>}</span><textarea value={draft.observations} placeholder="Ej.: No pagan entrada, botella Martin Miller gratis" onChange={(e) => updateDraft("observations", e.target.value)} />{noCharge && <small className="field-hint">Se enviará como solicitud (la confirma el local), sin cobro automático.</small>}</label>
+                <label className="field wide"><span>Observaciones internas {needsReview && <em className="no-charge-badge">{noCharge ? "Sin cobro detectado" : "A copas · revisa el local"}</em>}</span><textarea value={draft.observations} placeholder="Ej.: No pagan entrada, botella Martin Miller gratis" onChange={(e) => updateDraft("observations", e.target.value)} />{needsReview && <small className="field-hint">Se enviará como solicitud: queda &quot;A revisar&quot; en Fourvenues y el local ajusta el importe. Sin cobro automático.</small>}</label>
               </div>
             </div>
           </section>
@@ -760,7 +774,7 @@ export default function Home() {
               <div><span>✓</span><p><b>Zona y tarifa comprobadas</b><small>{currentZone?.label} · {price} € · adelanto {deposit} €</small></p></div>
               <div><span>✓</span><p><b>{selectedTables.length > 1 ? "Mesas combinadas preparadas" : "Mesa compatible preparada"}</b><small>{selectedTables.length > 1 ? `Mesas ${selectedTablesLabel}` : `Mesa ${selectedTablesLabel}`} · {combinationUsesInternal ? "incluye venta interna RRPP" : "venta pública"} · {draft.people} personas</small></p></div>
               {canSubmitLive ? (
-                <div><span>✓</span><p><b>Conector Fourvenues activo</b><small>{noCharge ? "Se enviará como SOLICITUD sin cobro (la confirma el local)." : "Se creará la reserva con enlace de pago (checkout)."}</small></p></div>
+                <div><span>✓</span><p><b>Conector Fourvenues activo</b><small>{needsReview ? "Se enviará como SOLICITUD: queda \"A revisar\" y el local ajusta el importe." : "Se creará la reserva con enlace de pago (checkout)."}</small></p></div>
               ) : (
                 <div className="pending"><span>5</span><p><b>{noLiveEvent ? "Sin evento para esa fecha" : "Conector pendiente"}</b><small>{noLiveEvent ? "Elige una fecha con evento para poder crear la reserva." : "Al configurar la API key, este paso creará el booking en Fourvenues."}</small></p></div>
               )}
@@ -803,11 +817,11 @@ export default function Home() {
                     ? "Creando reserva…"
                     : !reviewed
                       ? "Revisa y marca la confirmación"
-                      : noCharge
+                      : needsReview
                         ? "Solicitar reserva sin cobro"
                         : "Crear reserva y generar enlace de pago"}
                 </button>
-                <p className="duplicate-note">{noCharge ? "Irá como solicitud: el local la confirma desde el panel." : "Se generará un enlace de pago para enviar al cliente."}</p>
+                <p className="duplicate-note">{needsReview ? "Irá como solicitud: el local la confirma y ajusta el importe desde el panel." : "Se generará un enlace de pago para enviar al cliente."}</p>
               </>
             ) : (
               <>
