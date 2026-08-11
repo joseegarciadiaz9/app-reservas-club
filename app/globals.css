@@ -227,6 +227,7 @@ button { cursor: pointer; }
 .rate-chip.selected { border-color: var(--green); background: #e8f3ed; box-shadow: 0 0 0 3px rgba(38,117,92,.1); }
 .rate-note { margin: 9px 0 0; color: var(--ink-soft); font-size: 8px; line-height: 1.5; }
 .rate-note b { color: var(--ink); }
+.no-event-note { margin: 0 0 12px; padding: 10px 12px; border: 1px solid #f0dcc0; border-radius: 10px; color: #95652d; background: #fdf4e6; font-size: 9px; font-weight: 650; line-height: 1.5; }
 .login-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--paper); }
 .login-card { width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 13px; padding: 28px 26px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.82); box-shadow: 0 14px 40px rgba(42,46,54,.07); }
 .login-brand { display: flex; align-items: baseline; gap: 8px; color: var(--ink); }

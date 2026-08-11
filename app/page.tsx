@@ -329,11 +329,13 @@ export default function Home() {
     ? isAlpha
       ? "Conectado a Fourvenues (Alpha)"
       : "Conectado a Fourvenues (Producción)"
-    : "API Alpha pendiente";
+    : "Sin conectar";
 
   const afterCutoff = draft.arrival > "18:30";
   const isConcert = eventForDate(draft.date) !== "Evento de TØTEM";
-  const eventName = eventForDate(draft.date);
+  // Conectados mandan los datos reales; el catálogo solo cubre la simulación.
+  const eventName = liveEvent?.name || eventForDate(draft.date);
+  const noLiveEvent = Boolean(integration?.configured) && !liveEvent;
 
   // Conectados: zonas y mesas reales del evento. Si no, el catálogo simulado.
   const displayZones = useMemo(
@@ -595,7 +597,7 @@ export default function Home() {
         <header className="topbar">
           <div>
             <div className={isLive ? "test-badge live-badge" : "test-badge"}>
-              <span /> {isLive ? `Zonas reales de ${eventName}` : "Simulación conectable a Alpha"}
+              <span /> {isLive ? `Zonas reales de ${eventName}` : "Simulación · sin conectar"}
             </div>
             <p className="eyebrow">Nueva reserva</p>
             <h1>Del mensaje a la mesa.</h1>
@@ -652,6 +654,13 @@ export default function Home() {
               <div><span className="panel-number">02</span><div><h2>Zona y mesa</h2><p>La zona detectada queda marcada para comprobarla.</p></div></div>
               <span className="availability"><i /> {sellableCount} vendibles</span>
             </div>
+
+            {noLiveEvent && (
+              <p className="no-event-note">
+                No hay ningún evento de TØTEM el {draft.date}. Las zonas de abajo son de
+                ejemplo: cambia la fecha para cargar las reales.
+              </p>
+            )}
 
             <div className={`zone-selector ${displayZones.length > 4 ? "five-zones" : ""}`}>
               {displayZones.map((zone) => (
@@ -752,7 +761,7 @@ export default function Home() {
               {canSubmitLive ? (
                 <div><span>✓</span><p><b>Conector Fourvenues activo</b><small>{noCharge ? "Se enviará como SOLICITUD sin cobro (la confirma el local)." : "Se creará la reserva con enlace de pago (checkout)."}</small></p></div>
               ) : (
-                <div className="pending"><span>5</span><p><b>Conector Alpha pendiente</b><small>Al recibir la API key, este paso creará el booking en Fourvenues</small></p></div>
+                <div className="pending"><span>5</span><p><b>{noLiveEvent ? "Sin evento para esa fecha" : "Conector pendiente"}</b><small>{noLiveEvent ? "Elige una fecha con evento para poder crear la reserva." : "Al configurar la API key, este paso creará el booking en Fourvenues."}</small></p></div>
               )}
             </div>
 
@@ -802,9 +811,9 @@ export default function Home() {
             ) : (
               <>
                 <button className="blocked-action" disabled>
-                  {reviewed ? "Preparado · esperando API key Alpha" : "Revisa y marca la confirmación"}
+                  {noLiveEvent ? "Sin evento: elige otra fecha" : reviewed ? "Preparado · falta configurar la API" : "Revisa y marca la confirmación"}
                 </button>
-                <p className="duplicate-note">No se enviará ninguna reserva mientras el conector Alpha esté desactivado.</p>
+                <p className="duplicate-note">{noLiveEvent ? "No hay evento en esa fecha, así que no se puede crear la reserva." : "No se enviará ninguna reserva mientras el conector esté desactivado."}</p>
               </>
             )}
             <button className="modal-action secondary" onClick={() => setReviewOpen(false)}>Volver a la reserva</button>

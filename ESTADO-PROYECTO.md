@@ -149,6 +149,31 @@ Sigue **sin respuesta** la segunda pregunta del correo: si la clave de producci�
 debe generarse desde la organización **TØTEM Punta Umbría** (la de Alpha es de
 "Live Punta Umbría") y qué proceso hay para obtenerla.
 
+## Producción conectada (11-ago-2026)
+
+Inacio confirmó que la clave queda **vinculada a la organización desde la que se
+genera**, y que no hace falta más validación que tener la cuenta Pro activa. Se
+solicitó desde el Developer Portal de **TØTEM Punta Umbría** y la aprobaron el
+mismo día ("App Reservas TOTEM - RRPP (Produccion)", `all:read` + `all:write`,
+caduca 10/08/2027). Ya está en `.env` con `FOURVENUES_ENV=prod`.
+
+Verificado contra producción (solo lectura, **sin crear ninguna reserva**):
+
+- `GET /organizations` → TØTEM Punta Umbría (`Lmaws6h1d000t01f11c8s8a5oMsnOw5V`).
+- `GET /events` → 18 eventos reales.
+- `GET /bookings/zones/` devuelve las zonas reales y **coinciden con el mapeo**:
+  - Fiesta: PISTA GENERAL (Escenario) · PRECIO FIESTA 100 € · mesas 101–133.
+  - Fiesta: EMBARCADERO DEL PINAR · PRECIO PINAR 80 € · mesas J1–J4 + 201–224.
+  - Concierto: PINAR · PRECIO PINAR 80 €.
+- Precio y adelanto calculados desde la tarifa real (8 pax en Pinar → 155 €, 78 € de adelanto).
+
+Dos límites reales de producción:
+
+- **`can_select_client: false` en todas las zonas**: la mesa **no se puede fijar
+  por API**, la asigna el local. La app la sigue mostrando y la manda en las notas.
+- La zona **PISTA (CONCIERTO)** (tarifas LATERAL ESCENARIO y FRONT STAGE) no se
+  devuelve porque en el panel está marcada como *Zona completa*.
+
 ## Próximos pasos
 
 1. ✅ Admin conseguido y **clave Channel Manager solicitada** en Alpha (`all:read`/`all:write`).

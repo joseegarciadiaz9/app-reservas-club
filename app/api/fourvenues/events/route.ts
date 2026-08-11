@@ -5,15 +5,29 @@ import { errorResponse, jsonOk } from "../_shared";
 export const dynamic = "force-dynamic";
 
 /**
- * `end_date` es EXCLUSIVO en la API: pedir start=end=15/08 no devuelve el evento
- * de esa noche (empieza a las 20:00 UTC). Para un día concreto hay que cerrar el
- * rango en el día siguiente.
+ * El filtro de fechas de la API se aplica sobre la fecha de **fin** del evento,
+ * no la de inicio: pedir start=end=15/08 devuelve el evento de la noche del 14
+ * (que termina de madrugada el 15). Por eso pedimos una ventana amplia y después
+ * nos quedamos con los eventos que EMPIEZAN el día solicitado.
  */
-function nextDay(isoDate: string): string {
-  const date = new Date(`${isoDate}T00:00:00.000Z`);
+function shiftDays(isoDate: string, days: number): string {
+  const date = new Date(`${isoDate}T12:00:00.000Z`);
   if (Number.isNaN(date.getTime())) return isoDate;
-  date.setUTCDate(date.getUTCDate() + 1);
+  date.setUTCDate(date.getUTCDate() + days);
   return date.toISOString().slice(0, 10);
+}
+
+/** Día (YYYY-MM-DD) del instante dado en la zona horaria del local. */
+function localDate(iso: string | undefined): string {
+  if (!iso) return "";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
 }
 
 /**
@@ -24,9 +38,10 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date") ?? undefined;
-    const start_date = searchParams.get("start_date") ?? date ?? undefined;
+    const start_date =
+      searchParams.get("start_date") ?? (date ? shiftDays(date, -1) : undefined);
     const end_date =
-      searchParams.get("end_date") ?? (date ? nextDay(date) : undefined);
+      searchParams.get("end_date") ?? (date ? shiftDays(date, 2) : undefined);
     const organization_id = searchParams.get("organization_id") ?? undefined;
     const location_id = searchParams.get("location_id") ?? undefined;
 
@@ -36,7 +51,13 @@ export async function GET(request: Request): Promise<Response> {
       organization_id,
       location_id,
     });
-    return jsonOk(events);
+
+    if (!date) return jsonOk(events);
+
+    // Solo los que EMPIEZAN ese día. Si no hay ninguno se devuelve vacío a
+    // propósito: es preferible avisar de que no hay evento que enseñar las zonas
+    // de otra fecha y arriesgarse a crear la reserva en el evento equivocado.
+    return jsonOk(events.filter((event) => localDate(event.start_date) === date));
   } catch (error) {
     return errorResponse(error);
   }
