@@ -118,6 +118,26 @@ const tables: Record<Zone, string[]> = {
   front: ["F1", "F2", "F3", "F4", "F5", "F6"],
 };
 
+/**
+ * Referentes (RRPP), escritos EXACTAMENTE como figuran en el panel de TØTEM
+ * (Ajustes → Usuarios), respetando tildes. El referente no se puede asignar por
+ * API, así que el nombre viaja en las observaciones: si no coincide con el del
+ * panel, el local no sabe a quién atribuir la reserva.
+ *
+ * Entre paréntesis, el grupo que tienen en Fourvenues.
+ */
+const referrals = [
+  "Jose Garcia", // RRPP 2
+  "Raul Alfonso", // Directores
+  "Pedro Fernandez Sampedro", // Directores · RRPP
+  "José Cera", // Directores · RRPP
+  "Rafa García", // RRPP 2
+  "Diego Beas", // RRPP
+  "Juan Márquez", // RRPP
+  "Gonzalo Lopez Marquez", // RRPP 2
+  "Sin asignar",
+];
+
 const internalTables = new Set(["202", "205", "109", "J2", "L5", "F2"]);
 const blockedTables = new Set(["204", "207", "106", "J3", "L2", "F4"]);
 const tableCapacity = 9;
@@ -344,6 +364,12 @@ export default function Home() {
   // Conectados mandan los datos reales; el catálogo solo cubre la simulación.
   const eventName = liveEvent?.name || eventForDate(draft.date);
   const noLiveEvent = Boolean(integration?.configured) && !liveEvent;
+
+  // Si el formulario trae un referente que no está en la lista, se conserva como
+  // opción extra en vez de descartarlo en silencio.
+  const referralOptions = referrals.includes(draft.referral)
+    ? referrals
+    : [draft.referral, ...referrals];
 
   // Conectados: zonas y mesas reales del evento. Si no, el catálogo simulado.
   const displayZones = useMemo(
@@ -658,7 +684,7 @@ export default function Home() {
                 <label className="field"><span>Botellas</span><input type="number" min="1" value={draft.bottles} onChange={(e) => updateDraft("bottles", Number(e.target.value))} /></label>
                 <label className="field"><span>Teléfono</span><input value={draft.phone} onChange={(e) => updateDraft("phone", e.target.value)} /></label>
                 <label className="field"><span>Correo electrónico</span><input type="email" value={draft.email} onChange={(e) => updateDraft("email", e.target.value)} /></label>
-                <label className="field"><span>Referente / RRPP</span><select value={draft.referral} onChange={(e) => updateDraft("referral", e.target.value)}><option>Jose Garcia</option><option>RAUL ALFONSO</option><option>Sin asignar</option></select></label>
+                <label className="field"><span>Referente / RRPP</span><select value={draft.referral} onChange={(e) => updateDraft("referral", e.target.value)}>{referralOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
                 <label className="field wide"><span>Observaciones internas {needsReview && <em className="no-charge-badge">{noCharge ? "Sin cobro detectado" : "A copas · revisa el local"}</em>}</span><textarea value={draft.observations} placeholder="Ej.: No pagan entrada, botella Martin Miller gratis" onChange={(e) => updateDraft("observations", e.target.value)} />{needsReview && <small className="field-hint">Se enviará como solicitud: queda &quot;A revisar&quot; en Fourvenues y el local ajusta el importe. Sin cobro automático.</small>}</label>
               </div>
             </div>
