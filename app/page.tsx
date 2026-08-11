@@ -273,6 +273,44 @@ function parseRequest(text: string, previous: BookingDraft) {
   };
 }
 
+/** Cómo llamamos a cada campo que puede rechazar la API. */
+const fieldLabels: Record<string, string> = {
+  email: "el correo electrónico",
+  "info.email": "el correo electrónico",
+  full_name: "el nombre",
+  "info.full_name": "el nombre",
+  phone: "el teléfono",
+  "info.phone": "el teléfono",
+  quantity: "el nº de personas",
+  "info.quantity": "el nº de personas",
+  birthdate: "la fecha de nacimiento",
+  event_id: "el evento",
+  zone_slug: "la zona",
+  rate_slug: "la tarifa",
+  table_id: "la mesa",
+  redirect_url: "la URL de retorno",
+  error_url: "la URL de error",
+};
+
+/**
+ * Fourvenues devuelve "Validation Error" con el detalle en `details.errors`.
+ * Sin ese detalle el RRPP no sabe qué corregir, así que lo desglosamos.
+ */
+function describeApiError(result: { error?: string; details?: unknown }, fallback: string): string {
+  const errors = (result.details as { errors?: { field?: string; error?: string }[] } | null)
+    ?.errors;
+  if (errors?.length) {
+    const detalles = errors.map((item) => {
+      const label = fieldLabels[item.field ?? ""] ?? (item.field ? `«${item.field}»` : "un campo");
+      if (/valid email/i.test(item.error ?? "")) return `${label} no es válido`;
+      if (/required/i.test(item.error ?? "")) return `falta ${label}`;
+      return `${label}: ${item.error ?? "valor no válido"}`;
+    });
+    return `Fourvenues ha rechazado la reserva — ${detalles.join("; ")}.`;
+  }
+  return result.error || fallback;
+}
+
 function eventForDate(date: string) {
   if (date === "30/07/2026") return "UKIYØ · Gonzalo Alhambra";
   if (date === "01/08/2026") return "YUGEN · GEMELIERS";
@@ -422,7 +460,12 @@ export default function Home() {
   const maxCapacity = draft.bottles * 4;
   // Sin botellas ("a copas") no aplica el máximo de personas por botella.
   const bottleCapacityOk = Boolean(draft.bottlesNote) || draft.people <= maxCapacity;
-  const requiredFieldsOk = Boolean(draft.date && draft.fullName && draft.email && draft.people && draft.bottles);
+  // La API exige un email válido; comprobarlo aquí evita un "Validation Error"
+  // que no dice nada tras haber rellenado todo.
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(draft.email.trim());
+  const requiredFieldsOk = Boolean(
+    draft.date && draft.fullName && emailOk && draft.people && draft.bottles,
+  );
 
   // "No cobrar / 0 €": se detecta por las notas y decide el flujo (request vs checkout).
   // "No cobrar" y "a copas" van igual: las revisa el local antes de cobrar.
@@ -565,7 +608,9 @@ export default function Home() {
         const result = await requestBooking(
           buildRequestInput({ eventId: liveEvent._id, placement, info, observations }),
         );
-        if (!result.success) throw new Error(result.error || "No se pudo solicitar la reserva.");
+        if (!result.success) {
+          throw new Error(describeApiError(result, "No se pudo solicitar la reserva."));
+        }
         setSubmit({
           status: "success",
           message: "Reserva solicitada. El local debe aceptarla desde el panel (sin cobro).",
@@ -583,7 +628,7 @@ export default function Home() {
           }),
         );
         if (!result.success || !result.data) {
-          throw new Error(result.error || "No se pudo crear el checkout.");
+          throw new Error(describeApiError(result, "No se pudo crear el checkout."));
         }
         setSubmit({
           status: "success",
@@ -684,7 +729,7 @@ export default function Home() {
                 <label className="field"><span>Personas</span><input type="number" min="1" value={draft.people} onChange={(e) => updatePeople(Number(e.target.value))} /></label>
                 <label className="field"><span>Botellas</span><input type="number" min="1" value={draft.bottles} onChange={(e) => updateDraft("bottles", Number(e.target.value))} />{draft.bottlesNote && <small className="field-hint">El formulario decía «{draft.bottlesNote}»: se enviará ese texto, no el número.</small>}</label>
                 <label className="field"><span>Teléfono</span><input value={draft.phone} onChange={(e) => updateDraft("phone", e.target.value)} /></label>
-                <label className="field"><span>Correo electrónico</span><input type="email" value={draft.email} onChange={(e) => updateDraft("email", e.target.value)} /></label>
+                <label className="field"><span>Correo electrónico</span><input type="email" value={draft.email} onChange={(e) => updateDraft("email", e.target.value)} />{!emailOk && <small className="field-error">Fourvenues rechazará la reserva si el correo no es válido. Revísalo en el mensaje del cliente.</small>}</label>
                 <label className="field"><span>Referente / RRPP</span><select value={draft.referral} onChange={(e) => updateDraft("referral", e.target.value)}>{referralOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
                 <label className="field wide"><span>Observaciones internas {needsReview && <em className="no-charge-badge">{noCharge ? "Sin cobro detectado" : "A copas · revisa el local"}</em>}</span><textarea value={draft.observations} placeholder="Ej.: No pagan entrada, botella Martin Miller gratis" onChange={(e) => updateDraft("observations", e.target.value)} />{needsReview && <small className="field-hint">Se enviará como solicitud: queda &quot;A revisar&quot; en Fourvenues y el local ajusta el importe. Sin cobro automático.</small>}</label>
               </div>
