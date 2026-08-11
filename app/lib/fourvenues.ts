@@ -287,6 +287,10 @@ export class FourvenuesClient {
         ...(options.body ? { "Content-Type": "application/json" } : {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
+      // Nunca cachear: los eventos se crean sobre la marcha y la disponibilidad
+      // de mesas cambia por minutos. Una respuesta guardada podría ofrecer una
+      // mesa que acaban de reservar, o esconder un evento recién publicado.
+      cache: "no-store",
     });
 
     const raw = await response.text();
