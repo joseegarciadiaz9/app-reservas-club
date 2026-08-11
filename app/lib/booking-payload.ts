@@ -283,6 +283,8 @@ export function placementForZone(
     rateSlug?: string;
     rateAliases?: string[];
     spacePattern?: RegExp;
+    /** Reserva sin cobro: usa una tarifa a 0 € si el local ha creado alguna. */
+    preferNoCharge?: boolean;
   } = {},
 ): ResolvedPlacement | null {
   const spaces = sellableSpaces(zone);
@@ -301,6 +303,8 @@ export function placementForZone(
   // Las tarifas pueden colgar de la mesa concreta o de la zona.
   const rates = spaceMatch?.rates?.length ? spaceMatch.rates : zoneRates(zone);
   const rate =
+    // Si es sin cobro y existe tarifa a 0 €, manda esa sobre lo demás.
+    (options.preferNoCharge ? findNoChargeRate(rates) : undefined) ||
     (options.rateSlug && rates.find((item) => item.slug === options.rateSlug)) ||
     pickRate(rates, options.rateAliases ?? []);
   if (!rate) return null;
@@ -315,6 +319,37 @@ export function placementForZone(
     rate,
     zone,
   };
+}
+
+/**
+ * Tarifas que sirven para una reserva sin cobro.
+ *
+ * Fourvenues **no permite fijar el precio por API** (no hay campo de importe ni
+ * equivalente al botón "Invitación" del panel): el importe sale siempre de la
+ * tarifa. La única vía para que nazca a 0 € es que exista una tarifa a 0 €.
+ *
+ * Se exige que el precio sea 0 **y** que el nombre lo identifique como tal, para
+ * no coger por error una tarifa a 0 € creada con otro fin.
+ *
+ * ⚠️ Antes de crear esa tarifa en el panel hay que tener en cuenta que las
+ * tarifas NO tienen ajuste de visibilidad: heredan el de la zona. En una zona
+ * donde "Clientes" puede reservar (que es como están las de TØTEM, y lo que
+ * permite que la API las vea), la tarifa se ofrecería también en la web pública.
+ */
+const NO_CHARGE_RATE_PATTERNS: RegExp[] = [
+  /invitaci[oó]n/i,
+  /invitad/i,
+  /a\s*copas/i,
+  /cortes[ií]a/i,
+  /sin\s+cobro/i,
+];
+
+export function findNoChargeRate(rates: FourvenuesRate[]): FourvenuesRate | undefined {
+  return rates.find(
+    (rate) =>
+      rate.price === 0 &&
+      NO_CHARGE_RATE_PATTERNS.some((pattern) => pattern.test(rate.name ?? "")),
+  );
 }
 
 /** Precio y adelanto reales que aplicará Fourvenues para esa tarifa. */

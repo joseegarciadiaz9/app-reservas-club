@@ -88,6 +88,29 @@ de manera automática como si el grupo llegara a las 22:00h… El precio total y
 se calculará en puerta por nuestro personal según la hora de llegada"*. O sea, el
 precio de la API es orientativo por diseño del local.
 
+## Reservas sin cobro (invitaciones / "a copas")
+
+**El botón "Invitación" del panel no existe en la API.** `POST /bookings/request`
+y `/checkout` no aceptan ningún campo de precio, adelanto ni importe: el importe
+lo calcula Fourvenues a partir de la **tarifa**. El único campo económico del
+payload es `discount_code` (y en las zonas de TØTEM los códigos están
+desactivados: `has_discount_codes_enabled: false`).
+
+La única vía para que una reserva nazca a 0 € es que **exista una tarifa a 0 €**.
+El código ya la usa: si las notas del RRPP marcan "no cobrar / invitación / a
+copas", `placementForZone({ preferNoCharge: true })` elige una tarifa que cumpla
+**las dos** condiciones — precio 0 **y** nombre identificable (invitación,
+a copas, cortesía…). Si no existe, se comporta como siempre: reserva normal en
+modo `request` con el aviso en las notas, para que el local pulse "Invitación".
+
+> ⚠️ **Ojo antes de crear esa tarifa.** Las tarifas **no tienen ajuste de
+> visibilidad**: heredan el de la zona ("Pueden reservar: Clientes / Usuarios
+> profesionales / Colaboradores"). Las zonas de TØTEM tienen **Clientes activado**
+> —que es lo que permite que la Channel Manager API las vea—, así que una tarifa
+> a 0 € en ellas **también se ofrecería en la web pública**. Antes de usarla hay
+> que confirmar con Fourvenues cómo exponerla solo a la app (p. ej. una zona
+> reservada a profesionales, si la API sigue viéndola).
+
 ## Flujo de creación de una reserva
 
 1. `GET /events?date=...` → localizar el `event_id` de la fecha.

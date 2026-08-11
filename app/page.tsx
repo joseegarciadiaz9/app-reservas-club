@@ -492,6 +492,7 @@ export default function Home() {
       ? placementForZone(currentZone.live, {
           tableName: selectedTables[0],
           rateSlug: activeRate?.slug,
+          preferNoCharge: noCharge,
         })
       : null;
     if (!placement) {
