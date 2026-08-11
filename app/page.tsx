@@ -707,8 +707,14 @@ export default function Home() {
       <section className="workspace">
         <header className="topbar">
           <div>
-            <div className={isLive ? "test-badge live-badge" : "test-badge"}>
-              <span /> {isLive ? `Zonas reales de ${eventName}` : "Simulación · sin conectar"}
+            <div className={isLive || integration?.configured ? "test-badge live-badge" : "test-badge"}>
+              <span />{" "}
+              {isLive
+                ? `Zonas reales de ${eventName}`
+                : integration?.configured
+                  // Conectados pero sin fecha aún: no es simulación, solo faltan datos.
+                  ? "Conectado · pega una solicitud para empezar"
+                  : "Simulación · sin conectar"}
             </div>
             <p className="eyebrow">Nueva reserva</p>
             <h1>Del mensaje a la mesa.</h1>
