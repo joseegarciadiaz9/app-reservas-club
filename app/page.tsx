@@ -311,6 +311,14 @@ function describeApiError(result: { error?: string; details?: unknown }, fallbac
   return result.error || fallback;
 }
 
+const monthNames = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
+
+/** "15/08/2026" → "AGO" (antes solo contemplaba julio y agosto). */
+function monthLabel(date: string): string {
+  const month = Number(date.slice(3, 5));
+  return monthNames[month - 1] ?? "";
+}
+
 function eventForDate(date: string) {
   if (date === "30/07/2026") return "UKIYØ · Gonzalo Alhambra";
   if (date === "01/08/2026") return "YUGEN · GEMELIERS";
@@ -328,7 +336,8 @@ export default function Home() {
   const [reviewed, setReviewed] = useState(false);
   const [selectedRateSlug, setSelectedRateSlug] = useState<string | undefined>();
   const [integration, setIntegration] = useState<{ configured: boolean; baseUrl: string } | null>(null);
-  const [liveEvent, setLiveEvent] = useState<FourvenuesEvent | null>(null);
+  const [liveEvents, setLiveEvents] = useState<FourvenuesEvent[] | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<string | undefined>();
   const [liveZones, setLiveZones] = useState<FourvenuesZone[] | null>(null);
   const [submit, setSubmit] = useState<{
     status: "idle" | "loading" | "success" | "error";
@@ -350,45 +359,64 @@ export default function Home() {
     };
   }, []);
 
-  // Solo cuando hay API key: localiza el evento de la fecha y carga sus zonas
-  // reales. En simulación no se ejecuta y la UI sigue con datos hardcodeados.
+  // Solo cuando hay API key: carga los eventos de esa fecha. Normalmente hay uno,
+  // pero puede haber varios (p. ej. un tardeo y la noche) y entonces el RRPP
+  // elige en el desplegable de la cabecera.
   useEffect(() => {
     if (!integration?.configured || !draft.date) return;
     let active = true;
-    setLiveEvent(null);
+    setLiveEvents(null);
+    setSelectedEventId(undefined);
     setLiveZones(null);
-    (async () => {
-      const events = await fetchEvents(toIsoDate(draft.date));
-      if (!active || !events.success || !events.data?.length) return;
-      const event = events.data[0];
-      setLiveEvent(event);
-      const zones = await fetchZones(event._id);
-      if (!active || !zones.success || !zones.data?.length) return;
-      setLiveZones(zones.data);
+    fetchEvents(toIsoDate(draft.date))
+      .then((result) => {
+        if (!active) return;
+        const found = result.success ? result.data ?? [] : [];
+        setLiveEvents(found);
+        setSelectedEventId(found[0]?._id);
+      })
+      .catch(() => {
+        /* Un fallo cargando datos reales no debe romper la pantalla. */
+      });
+    return () => {
+      active = false;
+    };
+  }, [integration?.configured, draft.date]);
 
-      // Traduce la zona detectada en el formulario ("pinar", "jaima"…) a la
-      // zona equivalente de ESTE evento, y recoloca tarifa y mesas sugeridas.
-      const mapping = ZONE_MAPPINGS[draft.zone];
-      const match = mapping ? findZone(zones.data, mapping.zoneAliases) : undefined;
-      const target = match ?? zones.data[0];
-      const key = target.slug || target._id;
+  // Zonas reales del evento seleccionado (cambia al elegir otro en la cabecera).
+  useEffect(() => {
+    if (!selectedEventId) return;
+    let active = true;
+    setLiveZones(null);
+    fetchZones(selectedEventId)
+      .then((zones) => {
+        if (!active || !zones.success || !zones.data?.length) return;
+        setLiveZones(zones.data);
 
-      setDraft((current) => (current.zone === key ? current : { ...current, zone: key }));
-      setSelectedRateSlug(zoneRates(target)[0]?.slug);
-      setSelectedTables(
-        suggestedCombination(toDisplayZones([target])[0].tables, draft.people),
-      );
-    })().catch(() => {
-      /* Un fallo cargando datos reales no debe romper la pantalla. */
-    });
+        // Traduce la zona detectada en el formulario ("pinar", "jaima"…) a la
+        // zona equivalente de ESTE evento, y recoloca tarifa y mesas sugeridas.
+        const mapping = ZONE_MAPPINGS[draft.zone];
+        const match = mapping ? findZone(zones.data, mapping.zoneAliases) : undefined;
+        const target = match ?? zones.data[0];
+        const key = target.slug || target._id;
+
+        setDraft((current) => (current.zone === key ? current : { ...current, zone: key }));
+        setSelectedRateSlug(zoneRates(target)[0]?.slug);
+        setSelectedTables(
+          suggestedCombination(toDisplayZones([target])[0].tables, draft.people),
+        );
+      })
+      .catch(() => {
+        /* Igual: si fallan las zonas, la pantalla sigue usable. */
+      });
     return () => {
       active = false;
     };
     // `draft.zone` y `draft.people` se leen a propósito sin estar en las
-    // dependencias: solo hay que recargar el evento al cambiar de fecha, no
-    // cada vez que el RRPP toca la zona o el número de personas.
+    // dependencias: solo hay que recargar al cambiar de evento, no cada vez que
+    // el RRPP toca la zona o el número de personas.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [integration?.configured, draft.date]);
+  }, [selectedEventId]);
 
   const isAlpha = integration?.baseUrl.includes("alpha") ?? true;
   const connectionLabel = integration?.configured
@@ -400,7 +428,10 @@ export default function Home() {
   const afterCutoff = draft.arrival > "18:30";
   const isConcert = eventForDate(draft.date) !== "Evento de TØTEM";
   // Conectados mandan los datos reales; el catálogo solo cubre la simulación.
+  const liveEvent = liveEvents?.find((event) => event._id === selectedEventId) ?? null;
   const eventName = liveEvent?.name || eventForDate(draft.date);
+  // El desplegable solo aparece con datos reales; en simulación se pinta el texto.
+  const eventPickerOptions = liveEvents ?? [];
   const noLiveEvent = Boolean(integration?.configured) && !liveEvent;
 
   // Si el formulario trae un referente que no está en la lista, se conserva como
@@ -691,9 +722,25 @@ export default function Home() {
             <p className="test-description">Analiza el formulario, valida la zona y deja preparada la reserva para Fourvenues.</p>
           </div>
           <div className="event-chip">
-            <span className="event-date"><b>{draft.date.slice(0, 2)}</b>{draft.date.slice(3, 5) === "08" ? "AGO" : "JUL"}</span>
-            <span><small>Evento localizado</small><strong>{eventName}</strong></span>
-            <span className="chevron">⌄</span>
+            <span className="event-date"><b>{draft.date.slice(0, 2)}</b>{monthLabel(draft.date)}</span>
+            <span>
+              <small>{eventPickerOptions.length > 1 ? `${eventPickerOptions.length} eventos ese día` : "Evento localizado"}</small>
+              {eventPickerOptions.length > 0 ? (
+                <select
+                  className="event-select"
+                  aria-label="Evento de Fourvenues"
+                  value={selectedEventId ?? ""}
+                  onChange={(event) => setSelectedEventId(event.target.value)}
+                >
+                  {eventPickerOptions.map((option) => (
+                    <option key={option._id} value={option._id}>{option.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <strong>{eventName}</strong>
+              )}
+            </span>
+            {eventPickerOptions.length === 0 && <span className="chevron">⌄</span>}
           </div>
         </header>
 
