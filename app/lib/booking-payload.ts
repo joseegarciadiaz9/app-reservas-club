@@ -111,8 +111,16 @@ export function composeClientObservations(parts: ObservationParts): string {
   } else if (typeof parts.bottles === "number" && parts.bottles > 0) {
     lines.push(`Botellas: ${parts.bottles}`);
   }
-  if (parts.tables && parts.tables.length > 1) {
-    lines.push(`Mesas combinadas: ${parts.tables.join(" + ")}`);
+  // La mesa NO se puede fijar por API (`can_select_client: false` en producción),
+  // así que la elección del RRPP solo llega al local si va escrita aquí. Antes
+  // solo se anotaba al combinar varias y la mesa suelta se perdía: la reserva
+  // llegaba "Sin colocar" sin rastro de la que se había pedido.
+  if (parts.tables?.length) {
+    lines.push(
+      parts.tables.length > 1
+        ? `Mesas solicitadas (combinadas): ${parts.tables.join(" + ")}`
+        : `Mesa solicitada: ${parts.tables[0]}`,
+    );
   }
   if (parts.referral && parts.referral.toLowerCase() !== "sin asignar") {
     lines.push(`Referente (RRPP): ${parts.referral}`);
