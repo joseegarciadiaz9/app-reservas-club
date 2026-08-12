@@ -12,14 +12,11 @@
 
 import type {
   CreateBookingBase,
-  CreateCheckoutInput,
   FourvenuesBookingInfo,
   FourvenuesRate,
   FourvenuesSpace,
   FourvenuesZone,
 } from "./fourvenues";
-
-export type BookingMode = "checkout" | "request";
 
 /** Palabras que marcan una reserva sin cobro (invitación / gratis / 0 €). */
 const NO_CHARGE_PATTERNS: RegExp[] = [
@@ -66,14 +63,6 @@ export function detectSpecialPricing(text: string | undefined | null): boolean {
  */
 export function needsVenueReview(text: string | undefined | null): boolean {
   return detectNoCharge(text) || detectSpecialPricing(text);
-}
-
-/**
- * Lo que necesita revisión va por `request` (queda "A revisar" en el panel, sin
- * cobro automático). El resto por `checkout`, que genera el enlace de pago.
- */
-export function resolveBookingMode(review: boolean): BookingMode {
-  return review ? "request" : "checkout";
 }
 
 export interface ObservationParts {
@@ -414,23 +403,34 @@ export function findNoChargeRate(rates: FourvenuesRate[]): FourvenuesRate | unde
  * y si la tarifa es `full_payment`, cobra el 100 %, no el adelanto.
  */
 export function priceForRate(rate: FourvenuesRate, people: number) {
-  const extraPeople = Math.max(0, people - (rate.included_persons ?? 0));
-  const supplementUnit = rate.supplement_persons || 1;
-  const extraBlocks = Math.ceil(extraPeople / supplementUnit);
-  const price = rate.price + extraBlocks * (rate.supplement_price ?? 0);
+  const included = rate.included_persons ?? 0;
+  const supplementSeats = rate.supplement_persons ?? 0;
+  // Cada bloque de tarifa cubre `included_persons` y admite como mucho
+  // `supplement_persons` de más: en TØTEM, 3 incluidas + 1 = 4 por bloque. A la
+  // quinta persona ya hace falta un segundo bloque, aunque queden asientos de
+  // suplemento sin usar.
+  const perBlock = Math.max(1, included + supplementSeats);
+  const blocks = Math.max(1, Math.ceil(people / perBlock));
+  const extras = Math.max(0, people - blocks * included);
+  const price = blocks * rate.price + extras * (rate.supplement_price ?? 0);
 
-  const payable = rate.full_payment
-    ? rate.price
-    : rate.deposit?.type === "percentage"
-      ? (rate.price * (rate.deposit.value ?? 0)) / 100
+  const payable =
+    rate.deposit?.type === "percentage"
+      ? (price * (rate.deposit.value ?? 0)) / 100
       : (rate.deposit?.value ?? 0);
   const fee =
     rate.fee_type === "percentage"
       ? (payable * (rate.fee_quantity ?? 0)) / 100
       : (rate.fee_quantity ?? 0);
-  const chargeNow = Math.round((payable + fee) * 100) / 100;
 
-  return { price, chargeNow, pendingAtDoor: Math.max(0, price - payable) };
+  return {
+    price,
+    /** Adelanto que registra Fourvenues (sin comisión). */
+    deposit: Math.round(payable * 100) / 100,
+    /** Lo que pide la pasarela: adelanto + comisión. */
+    chargeNow: Math.round((payable + fee) * 100) / 100,
+    pendingAtDoor: Math.round((price - payable) * 100) / 100,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -469,18 +469,4 @@ function buildBase(args: BuildBookingArgs): CreateBookingBase {
 
 export function buildRequestInput(args: BuildBookingArgs): CreateBookingBase {
   return buildBase(args);
-}
-
-export interface BuildCheckoutArgs extends BuildBookingArgs {
-  redirectUrl?: string;
-  errorUrl?: string;
-}
-
-export function buildCheckoutInput(args: BuildCheckoutArgs): CreateCheckoutInput {
-  return {
-    ...buildBase(args),
-    redirect_url: args.redirectUrl,
-    error_url: args.errorUrl,
-    send_resources: true,
-  };
 }

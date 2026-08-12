@@ -17,7 +17,7 @@ UI (app/page.tsx, "use client")
 - `app/api/fourvenues/status` — ¿hay API key? (la UI pasa de "simulación" a "conectado").
 - `app/api/fourvenues/events` — `GET ?date=YYYY-MM-DD`.
 - `app/api/fourvenues/zones` — `GET ?event_id=...` (zonas + mesas + tarifas + disponibilidad).
-- `app/api/fourvenues/bookings` — `POST` (`mode: "checkout" | "request"`).
+- `app/api/fourvenues/bookings` — `POST` (la UI usa siempre `mode: "request"`; ver abajo).
 - `app/lib/fourvenues-browser.ts` — helper de navegador para llamar a lo anterior.
 
 ## Configuración (secrets)
@@ -124,33 +124,49 @@ modo `request` con el aviso en las notas, para que el local pulse "Invitación".
 
 1. `GET /events?date=...` → localizar el `event_id` de la fecha.
 2. `GET /bookings/zones?event_id=...` → zonas, mesas (`spaces`), tarifas y disponibilidad.
-3. `POST /bookings/checkout` (o `/request`) con la zona, tarifa, mesa e info del cliente.
-4. Fourvenues devuelve `payment_url` (checkout) y gestiona pago, confirmación y QR.
+3. `POST /bookings/request` con la zona, tarifa e info del cliente.
+4. La reserva queda "A revisar" en el panel; el local la confirma y gestiona el cobro.
 
-### El checkout NO crea la reserva (verificado en producción, 12-ago-2026)
+### Por qué la app usa siempre `request` (verificado en producción, 12-ago-2026)
 
-Se generó un checkout real (26/08/2026, PINAR, mesa 205, 6 personas) y **el panel
-siguió marcando "0 reservas"**, también en el filtro "Pendientes de revisión o de
-pago". La mesa nace **cuando el cliente paga**. Consecuencias:
+`POST /bookings/checkout` devuelve `payment_url` pero **no crea la reserva**. Se
+generó un checkout real (26/08/2026, PINAR, 6 personas) y el panel siguió
+marcando "0 reservas", también en el filtro "Pendientes de revisión o de pago".
+La mesa solo nacía si el cliente pagaba: una reserva sin pagar no dejaba rastro
+y el RRPP no podía ni consultarla.
 
-- El RRPP **tiene que enviar el enlace**: si no lo manda, no hay reserva en ningún sitio.
-- No sirve de nada buscar la reserva en el panel justo después de crearla.
-- Un enlace sin pagar no bloquea la mesa.
+`POST /bookings/request` sí la crea al momento, con estado **"A revisar"**,
+precio y adelanto calculados por Fourvenues, y las observaciones visibles. Por
+eso **todas** las reservas van por ahí, no solo las de "a copas".
 
-### Cuánto cobra realmente el enlace
+### Cómo calcula Fourvenues el precio
 
-Para la tarifa "PRECIO EMBARCADERO" (`price` 80, `included_persons` 3,
-`supplement_price` 15, `fee_quantity` 5 %, `deposit` 50 %, `full_payment` true)
-con 6 personas, la pasarela pidió **84 €**, que no es ni el total (125 €) ni el
-50 % de adelanto (63 €). La regla que se deduce:
+Medido creando reservas reales con la tarifa "PRECIO EMBARCADERO" (`price` 80,
+`included_persons` 3, `supplement_persons` 1, `supplement_price` 15,
+`deposit` 50 %, `fee_quantity` 5 %):
 
-- Se cobra sobre el **precio base** de la tarifa; los suplementos por persona
-  extra se liquidan **en puerta**, no en el enlace.
-- Con `full_payment: true` se cobra el 100 % de esa base, no el `deposit`.
-- Encima se suma la comisión (`fee_type` / `fee_quantity`).
+| Personas | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|
+| Precio | 80 | 95 | 160 | 160 | 175 |
+| Adelanto | 40 | 47,5 | 80 | 80 | 87,5 |
 
-Está implementado en `priceForRate()` y fijado con tests en
-`tests/pricing.test.mjs` usando estos mismos números.
+La regla: cada bloque de tarifa cubre `included_persons` y admite como mucho
+`supplement_persons` de más (3 + 1 = **4 por bloque**). A la quinta persona se
+abre bloque nuevo aunque sobren asientos de suplemento.
+
+```
+bloques = ceil(personas / (included_persons + supplement_persons))
+precio  = bloques × price + max(0, personas − bloques × included_persons) × supplement_price
+```
+
+Dos avisos:
+
+- **`full_payment: true` NO significa cobrar el 100 %.** La tarifa lo tiene a
+  true y Fourvenues aplicó igualmente el adelanto del 50 %.
+- La pasarela suma la comisión al adelanto: 6 personas → 80 € × 1,05 = **84 €**,
+  que es exactamente lo que pidió el enlace de pago real.
+
+Está en `priceForRate()` y fijado con estos números en `tests/pricing.test.mjs`.
 
 ## Estructura REAL de zonas y tarifas en TØTEM
 

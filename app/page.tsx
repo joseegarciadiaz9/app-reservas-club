@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
-  createCheckout,
   fetchEvents,
   fetchZones,
   getIntegrationStatus,
@@ -11,7 +10,6 @@ import {
   toIsoDate,
 } from "./lib/fourvenues-browser";
 import {
-  buildCheckoutInput,
   buildRequestInput,
   composeClientObservations,
   detectNoCharge,
@@ -20,7 +18,6 @@ import {
   findZone,
   placementForZone,
   priceForRate,
-  resolveBookingMode,
   sellableSpaces,
   zoneRates,
   ZONE_MAPPINGS,
@@ -467,7 +464,6 @@ export default function Home() {
   const [submit, setSubmit] = useState<{
     status: "idle" | "loading" | "success" | "error";
     message?: string;
-    paymentUrl?: string;
     /** Importe exacto que pedirá la pasarela, según la propia respuesta de la API. */
     totalAmount?: number;
     /** Aviso cuando el checkout aún no ha creado nada en el panel. */
@@ -672,7 +668,6 @@ export default function Home() {
   const noCharge = detectNoCharge(reviewText);
   const specialPricing = detectSpecialPricing(reviewText);
   const needsReview = needsVenueReview(reviewText);
-  const bookingMode = resolveBookingMode(needsReview);
   const canSubmitLive = Boolean(integration?.configured && liveEvent && liveZones?.length);
 
   function updateDraft<K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) {
@@ -822,44 +817,23 @@ export default function Home() {
 
     setSubmit({ status: "loading" });
     try {
-      if (bookingMode === "request") {
-        const result = await requestBooking(
-          buildRequestInput({ eventId: liveEvent._id, placement, info, observations }),
-        );
-        if (!result.success) {
-          throw new Error(describeApiError(result, "No se pudo solicitar la reserva."));
-        }
-        setSubmit({
-          status: "success",
-          message: "Reserva solicitada. El local debe aceptarla desde el panel (sin cobro).",
-        });
-      } else {
-        const origin = typeof window !== "undefined" ? window.location.origin : undefined;
-        const result = await createCheckout(
-          buildCheckoutInput({
-            eventId: liveEvent._id,
-            placement,
-            info,
-            observations,
-            redirectUrl: origin,
-            errorUrl: origin,
-          }),
-        );
-        if (!result.success || !result.data) {
-          throw new Error(describeApiError(result, "No se pudo crear el checkout."));
-        }
-        // Ojo: el checkout NO crea todavía la mesa en Fourvenues. Comprobado en
-        // el panel: tras generar el enlace, el evento seguía con "0 reservas"
-        // incluso en el filtro de pendientes. La reserva nace cuando el cliente
-        // paga, así que el RRPP tiene que enviar el enlace sí o sí.
-        setSubmit({
-          status: "success",
-          message: "Enlace de pago generado. Envíaselo al cliente.",
-          paymentUrl: result.data.payment_url,
-          totalAmount: result.data.total_amount,
-          note: "La mesa aún NO está en Fourvenues: aparecerá en el panel cuando el cliente pague. Si no paga, no hay reserva.",
-        });
+      const result = await requestBooking(
+        buildRequestInput({ eventId: liveEvent._id, placement, info, observations }),
+      );
+      if (!result.success) {
+        throw new Error(describeApiError(result, "No se pudo crear la reserva."));
       }
+      // Fourvenues calcula el precio por su cuenta; se enseña el suyo, no el
+      // nuestro, para que el RRPP diga al cliente la cifra que verá el local.
+      const registrado = result.data?.booking;
+      setSubmit({
+        status: "success",
+        message: "Reserva registrada en Fourvenues, pendiente de confirmar.",
+        totalAmount: registrado?.deposit,
+        note: needsReview
+          ? "Queda \"A revisar\": el local ajusta el importe antes de cobrar nada."
+          : "Queda \"A revisar\" en el panel del local, que la confirma y gestiona el cobro. Ya está apuntada.",
+      });
     } catch (error) {
       setSubmit({
         status: "error",
@@ -1064,10 +1038,10 @@ export default function Home() {
               <div className="summary-stats">
                 <div><span>Personas</span><b>{draft.people}</b></div>
                 <div><span>Capacidad mesas</span><b>{selectedTableCapacity} pax</b></div>
-                <div><span>{isLive ? "Precio total (tarifa real)" : "Precio estimado"}</span><b>{price} €</b></div>
-                <div><span>Cobra el enlace</span><b>{chargeNow} €</b></div>
+                <div><span>{isLive ? "Precio (según Fourvenues)" : "Precio estimado"}</span><b>{price} €</b></div>
+                <div><span>Adelanto</span><b>{chargeNow} €</b></div>
               </div>
-              {isLive && activeRate && <p className="rate-note">Tarifa <b>{activeRate.name}</b>: {activeRate.price} € con {activeRate.included_persons} personas incluidas{activeRate.supplement_price ? ` · +${activeRate.supplement_price} € por persona extra` : ""}. El enlace cobra {chargeNow} €{activeRate.fee_quantity ? ` (incluye ${activeRate.fee_quantity}% de gestión)` : ""}{pendingAtDoor > 0 ? `; los ${pendingAtDoor} € restantes se pagan en puerta` : ""}.</p>}
+              {isLive && activeRate && <p className="rate-note">Tarifa <b>{activeRate.name}</b>: {activeRate.price} € con {activeRate.included_persons} personas incluidas{activeRate.supplement_price ? ` · +${activeRate.supplement_price} € por persona extra` : ""}. Adelanto {chargeNow} €{activeRate.fee_quantity ? ` (incluye ${activeRate.fee_quantity}% de gestión)` : ""}{pendingAtDoor > 0 ? `; los ${pendingAtDoor} € restantes se pagan en puerta` : ""}.</p>}
               {!tablesCapacityOk && <p className="warning">Faltan mesas: selecciona {tablesNeeded} mesas contiguas para alojar a {draft.people} personas.</p>}
               {!bottleCapacityOk && <p className="warning">Se permiten hasta {maxCapacity} personas con {draft.bottles} botella{draft.bottles === 1 ? "" : "s"}. Revisa personas o botellas.</p>}
               {isConcert && <p className="concert-note">La reserva de botella no incluye la entrada del concierto.</p>}
@@ -1099,10 +1073,10 @@ export default function Home() {
             <div className="check-list" aria-label="Comprobaciones realizadas">
               <div><span>✓</span><p><b>Solicitud validada</b><small>{detectedFields} campos reconocidos y editables</small></p></div>
               <div><span>✓</span><p><b>Evento localizado</b><small>{draft.date} · {eventName}</small></p></div>
-              <div><span>✓</span><p><b>Zona y tarifa comprobadas</b><small>{currentZone?.label} · {price} € en total · el enlace cobra {chargeNow} €</small></p></div>
+              <div><span>✓</span><p><b>Zona y tarifa comprobadas</b><small>{currentZone?.label} · {price} € en total · {chargeNow} € de adelanto</small></p></div>
               <div><span>✓</span><p><b>{selectedTables.length > 1 ? "Mesas combinadas preparadas" : "Mesa compatible preparada"}</b><small>{selectedTables.length > 1 ? `Mesas ${selectedTablesLabel}` : `Mesa ${selectedTablesLabel}`} · {combinationUsesInternal ? "incluye venta interna RRPP" : "venta pública"} · {draft.people} personas</small></p></div>
               {canSubmitLive ? (
-                <div><span>✓</span><p><b>Conector Fourvenues activo</b><small>{needsReview ? "Se enviará como SOLICITUD: queda \"A revisar\" y el local ajusta el importe." : `Se generará un enlace de pago de ${chargeNow} €. La mesa entra en Fourvenues cuando el cliente pague.`}</small></p></div>
+                <div><span>✓</span><p><b>Conector Fourvenues activo</b><small>{needsReview ? "Entrará en Fourvenues como \"A revisar\" y el local ajusta el importe (sin cobro)." : `Entrará en Fourvenues como "A revisar": ${price} € con ${chargeNow} € de adelanto. El local la confirma y cobra desde el panel.`}</small></p></div>
               ) : (
                 <div className="pending"><span>5</span><p><b>{noLiveEvent ? "Sin evento para esa fecha" : "Conector pendiente"}</b><small>{noLiveEvent ? "Elige una fecha con evento para poder crear la reserva." : "Al configurar la API key, este paso creará el booking en Fourvenues."}</small></p></div>
               )}
@@ -1115,7 +1089,7 @@ export default function Home() {
                 <p><span>Llegada</span><b>{draft.arrival || "Sin hora"}</b></p>
                 <p><span>Ubicación</span><b>{currentZone?.label} · {selectedTables.length > 1 ? "Mesas" : "Mesa"} {selectedTablesLabel}</b></p>
                 <p><span>Personas / botellas</span><b>{draft.people} / {draft.bottlesNote || draft.bottles}</b></p>
-                <p><span>Total / cobra el enlace</span><b>{price} € / {chargeNow} €</b></p>
+                <p><span>Total / adelanto</span><b>{price} € / {chargeNow} €</b></p>
                 <p><span>Referente</span><b>{draft.referral}</b></p>
               </div>
               {draft.observations && <div className="receipt-observations"><span>Observaciones internas</span><b>{draft.observations}</b></div>}
@@ -1130,12 +1104,9 @@ export default function Home() {
               <div className="submit-result success">
                 <b>✓ {submit.message}</b>
                 {submit.totalAmount != null && (
-                  <p className="submit-amount">La pasarela pedirá <b>{submit.totalAmount} €</b>. El resto se cobra en puerta.</p>
+                  <p className="submit-amount">Adelanto según Fourvenues: <b>{submit.totalAmount} €</b>. El resto se cobra en puerta.</p>
                 )}
                 {submit.note && <p className="submit-note">{submit.note}</p>}
-                {submit.paymentUrl && (
-                  <a className="payment-link" href={submit.paymentUrl} target="_blank" rel="noopener noreferrer">Abrir enlace de pago →</a>
-                )}
               </div>
             ) : canSubmitLive ? (
               <>
@@ -1151,9 +1122,9 @@ export default function Home() {
                       ? "Revisa y marca la confirmación"
                       : needsReview
                         ? "Solicitar reserva sin cobro"
-                        : "Crear reserva y generar enlace de pago"}
+                        : "Crear reserva en Fourvenues"}
                 </button>
-                <p className="duplicate-note">{needsReview ? "Irá como solicitud: el local la confirma y ajusta el importe desde el panel." : "Genera el enlace de pago; la reserva no existe hasta que el cliente paga."}</p>
+                <p className="duplicate-note">{needsReview ? "Irá como solicitud: el local la confirma y ajusta el importe desde el panel." : "La reserva queda registrada en Fourvenues al momento, pendiente de que el local la confirme."}</p>
               </>
             ) : (
               <>

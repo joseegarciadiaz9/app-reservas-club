@@ -21,32 +21,50 @@ const precioEmbarcadero = {
   full_payment: true,
 };
 
-test("el total incluye el suplemento por persona extra", () => {
-  // 6 personas = 80 € de base (3 incluidas) + 3 × 15 €.
-  assert.equal(priceForRate(precioEmbarcadero, 6).price, 125);
-  assert.equal(priceForRate(precioEmbarcadero, 3).price, 80);
-});
+/**
+ * Precio y adelanto que devolvió Fourvenues al crear reservas reales con esta
+ * tarifa (producción, evento del 26/08/2026). No son cálculos nuestros: son las
+ * respuestas de `POST /bookings/request` y lo que muestra el panel.
+ *
+ * Lo importante es el salto de 4 a 5 personas: 95 € → 160 €. Cada bloque cubre
+ * 3 incluidas + 1 de suplemento, así que la quinta persona abre bloque nuevo.
+ */
+const medidoEnProduccion = [
+  { personas: 3, precio: 80, adelanto: 40 },
+  { personas: 4, precio: 95, adelanto: 47.5 },
+  { personas: 5, precio: 160, adelanto: 80 },
+  { personas: 6, precio: 160, adelanto: 80 },
+  { personas: 7, precio: 175, adelanto: 87.5 },
+];
 
-test("el enlace cobra la base más la comisión, no el total ni el 50 %", () => {
-  // Medido contra un checkout real: la pasarela pidió 84,00 € para 6 personas.
-  // Ni 125 € (el total) ni 63 € (el 50 % que mostraba la app antes).
+for (const { personas, precio, adelanto } of medidoEnProduccion) {
+  test(`${personas} personas → ${precio} € (adelanto ${adelanto} €)`, () => {
+    const resultado = priceForRate(precioEmbarcadero, personas);
+    assert.equal(resultado.price, precio);
+    assert.equal(resultado.deposit, adelanto);
+  });
+}
+
+test("la pasarela cobra el adelanto más la comisión", () => {
+  // Medido contra la pasarela real para 6 personas: pidió 84,00 €.
+  // 50 % de 160 = 80, más el 5 % de gestión.
   assert.equal(priceForRate(precioEmbarcadero, 6).chargeNow, 84);
-  // El cobro no depende del grupo: los suplementos se liquidan en puerta.
-  assert.equal(priceForRate(precioEmbarcadero, 3).chargeNow, 84);
-  assert.equal(priceForRate(precioEmbarcadero, 6).pendingAtDoor, 45);
+  assert.equal(priceForRate(precioEmbarcadero, 6).pendingAtDoor, 80);
 });
 
-test("sin full_payment se cobra el adelanto configurado", () => {
-  const conAdelanto = { ...precioEmbarcadero, full_payment: false };
-  // 50 % de 80 = 40, más el 5 % de comisión.
-  assert.equal(priceForRate(conAdelanto, 6).chargeNow, 42);
-  assert.equal(priceForRate(conAdelanto, 6).pendingAtDoor, 85);
+test("full_payment no significa cobrar el 100 %", () => {
+  // La tarifa lo tiene a true y aun así Fourvenues aplicó el adelanto del 50 %,
+  // así que el campo no debe alterar el cálculo.
+  const sinFullPayment = { ...precioEmbarcadero, full_payment: false };
+  assert.equal(
+    priceForRate(sinFullPayment, 6).chargeNow,
+    priceForRate(precioEmbarcadero, 6).chargeNow,
+  );
 });
 
 test("un adelanto fijo se respeta tal cual", () => {
   const fijo = {
     ...precioEmbarcadero,
-    full_payment: false,
     deposit: { type: "fixed", value: 30 },
     fee_quantity: 0,
   };
