@@ -615,9 +615,20 @@ export default function Home() {
   // La API exige un email válido; comprobarlo aquí evita un "Validation Error"
   // que no dice nada tras haber rellenado todo.
   const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(draft.email.trim());
-  const requiredFieldsOk = Boolean(
-    draft.date && draft.fullName && emailOk && draft.people && draft.bottles,
-  );
+  // Qué falta para poder seguir. Se enumera en vez de dar un simple sí/no para
+  // poder decírselo al RRPP: un botón gris sin explicación no hay quien lo use.
+  const blockers: string[] = [];
+  if (!parsed) blockers.push("pulsa «Analizar solicitud»");
+  if (!draft.date) blockers.push("falta la fecha");
+  if (!draft.fullName.trim()) blockers.push("falta el nombre del cliente");
+  if (!draft.people) blockers.push("faltan las personas");
+  // "A copas" vale como respuesta: no todas las reservas llevan botella.
+  if (!draft.bottles && !draft.bottlesNote) blockers.push("faltan las botellas");
+  if (!emailOk) blockers.push("el correo no es válido");
+  if (!tablesCapacityOk) blockers.push(`selecciona ${tablesNeeded} mesas para ${draft.people} personas`);
+  if (!bottleCapacityOk) blockers.push(`con ${draft.bottles} botellas caben ${maxCapacity} personas`);
+  if (noLiveEvent) blockers.push("no hay evento ese día");
+  const requiredFieldsOk = blockers.length === 0;
 
   // "No cobrar / 0 €": se detecta por las notas y decide el flujo (request vs checkout).
   // "No cobrar" y "a copas" van igual: las revisa el local antes de cobrar.
@@ -1018,7 +1029,10 @@ export default function Home() {
           <div className="fv-logo">F<span>V</span></div>
           <div className="send-copy"><span>Destino</span><b>Fourvenues · TØTEM Punta Umbría</b></div>
           <div className="send-details"><span><small>Evento</small>{draft.date}</span><span><small>Zona</small>{currentZone?.label}</span><span><small>{selectedTables.length > 1 ? "Mesas" : "Mesa"}</small>{selectedTablesLabel}</span></div>
-          <button className="send-button" disabled={!bottleCapacityOk || !tablesCapacityOk || !parsed || !requiredFieldsOk} onClick={() => { setReviewed(false); setReviewOpen(true); }}>Revisar antes de crear <span>→</span></button>
+          <div className="send-action">
+            <button className="send-button" disabled={!requiredFieldsOk} onClick={() => { setReviewed(false); setReviewOpen(true); }}>Revisar antes de crear <span>→</span></button>
+            {blockers.length > 0 && <small className="send-blockers">Para continuar: {blockers.join("; ")}.</small>}
+          </div>
         </section>
       </section>
 
