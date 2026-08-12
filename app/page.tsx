@@ -218,16 +218,91 @@ function valueFrom(text: string, labels: string[]) {
   return "";
 }
 
+const monthWords: Record<string, number> = {
+  enero: 1, ene: 1,
+  febrero: 2, feb: 2,
+  marzo: 3, mar: 3,
+  abril: 4, abr: 4,
+  mayo: 5, may: 5,
+  junio: 6, jun: 6,
+  julio: 7, jul: 7,
+  agosto: 8, ago: 8, agost: 8,
+  septiembre: 9, setiembre: 9, sept: 9, sep: 9, set: 9,
+  octubre: 10, oct: 10,
+  noviembre: 11, nov: 11,
+  diciembre: 12, dic: 12,
+};
+
+/** Sin acentos y en minúsculas, para comparar "Agosto", "agosto" y "AGOSTO". */
+function plainText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 /**
- * Acepta la fecha aunque venga con texto alrededor ("sabado 15/08/26") y con
- * cualquier separador. Los clientes no escriben la fecha sola.
+ * Si el cliente no pone año, se elige el que hace que la fecha caiga cerca:
+ * el actual, salvo que ya haya pasado hace meses (entonces es del año que viene).
  */
-function normalizeDate(value: string) {
-  const match = value.match(/(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{2,4})/);
-  if (!match) return value.trim();
-  const [, day, month, rawYear] = match;
-  const year = Number(rawYear) < 100 ? 2000 + Number(rawYear) : Number(rawYear);
-  return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+function guessYear(day: number, month: number, today: Date): number {
+  const year = today.getFullYear();
+  const candidate = new Date(year, month - 1, day);
+  const seisMeses = 1000 * 60 * 60 * 24 * 180;
+  if (candidate.getTime() < today.getTime() - seisMeses) return year + 1;
+  return year;
+}
+
+/**
+ * Interpreta la fecha escrita como sea. Cada cliente la manda a su manera:
+ * "15/08/2026", "15-8-26", "15.08.26", "sabado 15/08", "13 agosto",
+ * "13 de agosto de 2026", "13 ago", "2026-08-15"… Si no hay forma de
+ * entenderla, se devuelve tal cual para que el RRPP la vea y la corrija.
+ */
+function normalizeDate(value: string, today = new Date()): string {
+  const texto = plainText(value);
+  const armar = (day: number, month: number, year: number) =>
+    `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
+
+  // 2026-08-15 (formato ISO)
+  const iso = texto.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (iso) return armar(Number(iso[3]), Number(iso[2]), Number(iso[1]));
+
+  // 15/08/2026 · 15-8-26 · 15.08.26
+  const conAnio = texto.match(/(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{2,4})/);
+  if (conAnio) {
+    const rawYear = Number(conAnio[3]);
+    return armar(Number(conAnio[1]), Number(conAnio[2]), rawYear < 100 ? 2000 + rawYear : rawYear);
+  }
+
+  // 13 agosto · 13 de agosto · 13 de agosto de 2026 · 13 ago 26
+  const conMes = texto.match(
+    /(\d{1,2})\s*(?:de\s+)?([a-z]+)\.?(?:\s*(?:de\s+|del\s+)?(\d{2,4}))?/,
+  );
+  if (conMes) {
+    const month = monthWords[conMes[2]];
+    if (month) {
+      const day = Number(conMes[1]);
+      const rawYear = conMes[3] ? Number(conMes[3]) : undefined;
+      const year =
+        rawYear === undefined
+          ? guessYear(day, month, today)
+          : rawYear < 100
+            ? 2000 + rawYear
+            : rawYear;
+      return armar(day, month, year);
+    }
+  }
+
+  // 15/08 · 15-8 (sin año)
+  const sinAnio = texto.match(/(\d{1,2})\s*[/.\-]\s*(\d{1,2})(?!\s*[/.\-]?\s*\d)/);
+  if (sinAnio) {
+    const day = Number(sinAnio[1]);
+    const month = Number(sinAnio[2]);
+    if (month >= 1 && month <= 12) return armar(day, month, guessYear(day, month, today));
+  }
+
+  return value.trim();
 }
 
 /** Hora de llegada escrita como sea: "00.00", "18h30", "18:00", "20 h". */
@@ -416,11 +491,21 @@ export default function Home() {
     const buscada = normalizeDate(draft.date);
     const match = liveEvents.find((event) => localDayOf(event.start_date) === buscada);
     setSelectedEventId((current) => (match ? match._id : current ? undefined : current));
+    // Al encontrar el evento se deja la fecha en su forma canónica, para que el
+    // campo, el día del chip y el evento digan lo mismo aunque el cliente la
+    // hubiera escrito como "13 agosto".
+    if (match && draft.date !== buscada) updateDraft("date", buscada);
   }, [liveEvents, draft.date]);
 
   // Zonas reales del evento seleccionado (cambia al elegir otro en la cabecera).
   useEffect(() => {
-    if (!selectedEventId) return;
+    if (!selectedEventId) {
+      // Sin evento no puede haber zonas reales. Si no se limpian, se quedan las
+      // del evento anterior y la pantalla se contradice: avisa de que no hay
+      // evento mientras enseña zonas etiquetadas como "datos reales".
+      setLiveZones(null);
+      return;
+    }
     let active = true;
     setLiveZones(null);
     fetchZones(selectedEventId)
