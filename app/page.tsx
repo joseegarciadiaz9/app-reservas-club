@@ -409,9 +409,12 @@ export default function Home() {
   }, [integration?.configured]);
 
   // La fecha del formulario manda: selecciona el evento de ese día si existe.
+  // Se normaliza al comparar para que "13/8/26" encuentre el evento igual que
+  // "13/08/2026"; una fecha a medias simplemente no casa con ninguno.
   useEffect(() => {
     if (!liveEvents?.length || !draft.date) return;
-    const match = liveEvents.find((event) => localDayOf(event.start_date) === draft.date);
+    const buscada = normalizeDate(draft.date);
+    const match = liveEvents.find((event) => localDayOf(event.start_date) === buscada);
     setSelectedEventId((current) => (match ? match._id : current ? undefined : current));
   }, [liveEvents, draft.date]);
 
@@ -825,7 +828,10 @@ export default function Home() {
               <div className="parsed-header"><h3>Datos interpretados</h3><span>Todos se pueden corregir</span></div>
               <div className="fields-grid">
                 <label className="field wide"><span>Nombre y apellidos</span><input value={draft.fullName} onChange={(e) => updateDraft("fullName", e.target.value)} /></label>
-                <label className="field"><span>Fecha</span><input value={draft.date} onChange={(e) => updateDraft("date", normalizeDate(e.target.value))} /></label>
+                {/* Se ordena al salir del campo, no en cada tecla: normalizando
+                    mientras se escribe, "13/08/20" se convertía en 2020 y ya no
+                    se podía terminar de teclear el año. */}
+                <label className="field"><span>Fecha</span><input value={draft.date} placeholder="DD/MM/AAAA" onChange={(e) => updateDraft("date", e.target.value)} onBlur={(e) => updateDraft("date", normalizeDate(e.target.value))} /></label>
                 <label className="field"><span>Hora de llegada</span><input type="time" value={draft.arrival} onChange={(e) => updateDraft("arrival", e.target.value)} /></label>
                 <label className="field"><span>Personas</span><input type="number" min="1" value={draft.people} onChange={(e) => updatePeople(Number(e.target.value))} /></label>
                 <label className="field"><span>Botellas</span><input type="number" min="1" value={draft.bottles} onChange={(e) => updateDraft("bottles", Number(e.target.value))} />{draft.bottlesNote && <small className="field-hint">El formulario decía «{draft.bottlesNote}»: se enviará ese texto, no el número.</small>}</label>
