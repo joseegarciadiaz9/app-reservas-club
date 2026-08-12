@@ -400,17 +400,37 @@ export function findNoChargeRate(rates: FourvenuesRate[]): FourvenuesRate | unde
   );
 }
 
-/** Precio y adelanto reales que aplicará Fourvenues para esa tarifa. */
+/**
+ * Los dos importes de una reserva, que **no** son el mismo número:
+ *
+ * - `price`: lo que costará la mesa en total (base + suplemento por persona
+ *   extra). Es lo que el grupo acaba pagando entre enlace y puerta.
+ * - `chargeNow`: lo que cobra el enlace de pago en el momento.
+ *
+ * Comprobado contra un checkout real (PINAR, tarifa "PRECIO EMBARCADERO",
+ * 6 personas): la pasarela pidió 84 €, no los 125 € del total ni el 50 % de
+ * adelanto. Es decir, Fourvenues cobra sobre el **precio base** de la tarifa
+ * —los suplementos por persona se liquidan en puerta— y le suma su comisión;
+ * y si la tarifa es `full_payment`, cobra el 100 %, no el adelanto.
+ */
 export function priceForRate(rate: FourvenuesRate, people: number) {
   const extraPeople = Math.max(0, people - (rate.included_persons ?? 0));
   const supplementUnit = rate.supplement_persons || 1;
   const extraBlocks = Math.ceil(extraPeople / supplementUnit);
   const price = rate.price + extraBlocks * (rate.supplement_price ?? 0);
-  const deposit =
-    rate.deposit?.type === "percentage"
-      ? Math.round((price * (rate.deposit.value ?? 0)) / 100)
+
+  const payable = rate.full_payment
+    ? rate.price
+    : rate.deposit?.type === "percentage"
+      ? (rate.price * (rate.deposit.value ?? 0)) / 100
       : (rate.deposit?.value ?? 0);
-  return { price, deposit };
+  const fee =
+    rate.fee_type === "percentage"
+      ? (payable * (rate.fee_quantity ?? 0)) / 100
+      : (rate.fee_quantity ?? 0);
+  const chargeNow = Math.round((payable + fee) * 100) / 100;
+
+  return { price, chargeNow, pendingAtDoor: Math.max(0, price - payable) };
 }
 
 // ---------------------------------------------------------------------------

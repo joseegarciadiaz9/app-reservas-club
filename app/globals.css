@@ -172,8 +172,10 @@ button { cursor: pointer; }
 .send-details { display: flex; gap: 22px; }
 .send-details span { font-size: 9px; font-weight: 700; }
 .send-details small { display: block; margin-bottom: 3px; color: #979da4; font-size: 6px; text-transform: uppercase; letter-spacing: .08em; }
-.send-button { border: 0; border-radius: 9px; padding: 11px 16px; color: white; background: var(--green); font-size: 9px; font-weight: 800; box-shadow: 0 7px 15px rgba(38,117,92,.17); }
-.send-button:hover { background: #1e684f; }
+.send-button { border: 0; border-radius: 10px; padding: 13px 18px; color: white; background: linear-gradient(180deg, #2c7d62 0%, #1d5c47 100%); font-size: 9px; font-weight: 800; letter-spacing: .03em; box-shadow: 0 8px 18px rgba(29,92,71,.22), inset 0 1px 0 rgba(255,255,255,.16); transition: transform .12s ease, box-shadow .12s ease, filter .12s ease; }
+.send-button:hover:not(:disabled) { filter: brightness(1.06); box-shadow: 0 11px 22px rgba(29,92,71,.26), inset 0 1px 0 rgba(255,255,255,.2); }
+.send-button:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 4px 10px rgba(29,92,71,.2); }
+.send-button:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .send-button:disabled { cursor: not-allowed; opacity: .45; }
 .send-button span { margin-left: 13px; }
 
@@ -193,6 +195,7 @@ button { cursor: pointer; }
 .review-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: #f4d49e; background: var(--navy); font-size: 21px; }
 .review-header h2 { margin: 0; font-family: Georgia, serif; font-size: 25px; font-weight: 600; }
 .safe-pill { padding: 6px 9px; border-radius: 999px; color: #815922; background: #f1e3ce; font-size: 8px; font-weight: 800; }
+.safe-pill.sent { color: var(--green); background: #d9ede2; }
 .check-list { display: grid; margin: 20px 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: white; }
 .check-list > div { display: grid; grid-template-columns: 25px 1fr; gap: 9px; align-items: center; padding: 10px 12px; border-top: 1px solid #eee8de; }
 .check-list > div:first-child { border-top: 0; }
@@ -227,8 +230,10 @@ button { cursor: pointer; }
 .rate-chip b { font-size: 9px; font-weight: 800; }
 .rate-chip small { color: var(--ink-soft); font-size: 8px; }
 .rate-chip.selected { border-color: var(--green); background: #e8f3ed; box-shadow: 0 0 0 3px rgba(38,117,92,.1); }
-.rate-note { margin: 9px 0 0; color: var(--ink-soft); font-size: 8px; line-height: 1.5; }
-.rate-note b { color: var(--ink); }
+/* Vive dentro de `.summary-card`, que es navy: con los colores de texto sobre
+   fondo claro el nombre de la tarifa quedaba navy sobre navy, invisible. */
+.rate-note { margin: 9px 0 0; color: rgba(255,255,255,.72); font-size: 8px; line-height: 1.5; }
+.rate-note b { color: #f4d49e; font-weight: 700; }
 .no-event-note { margin: 0 0 12px; padding: 10px 12px; border: 1px solid #f0dcc0; border-radius: 10px; color: #95652d; background: #fdf4e6; font-size: 9px; font-weight: 650; line-height: 1.5; }
 .login-shell { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: var(--paper); }
 .login-card { width: 100%; max-width: 340px; display: flex; flex-direction: column; gap: 13px; padding: 28px 26px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.82); box-shadow: 0 14px 40px rgba(42,46,54,.07); }
@@ -238,12 +243,28 @@ button { cursor: pointer; }
 .login-error { margin: 0; padding: 9px 11px; border: 1px solid #f1cec6; border-radius: 9px; color: #a3341f; background: #fbe9e5; font-size: 9px; font-weight: 700; }
 .login-card .analyze-button:disabled { opacity: .55; }
 .logout-button { border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; }
-.modal-action.primary { background: var(--green); box-shadow: 0 7px 14px rgba(38,117,92,.18); }
+/* Es la acción que crea la reserva de verdad: tiene que pesar más que el resto
+   del modal sin romper la paleta (el verde plano cantaba sobre el crema). */
+.modal-action.primary {
+  padding: 15px 12px;
+  border-radius: 11px;
+  background: linear-gradient(180deg, #2c7d62 0%, #1d5c47 100%);
+  box-shadow: 0 10px 22px rgba(29,92,71,.26), inset 0 1px 0 rgba(255,255,255,.16);
+  font-size: 11px;
+  letter-spacing: .04em;
+  transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+}
+.modal-action.primary:hover:not(:disabled) { filter: brightness(1.06); box-shadow: 0 13px 26px rgba(29,92,71,.3), inset 0 1px 0 rgba(255,255,255,.2); }
+.modal-action.primary:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 5px 12px rgba(29,92,71,.24); }
+.modal-action.primary:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 .modal-action.primary:disabled { background: #e8e5df; color: #737a83; box-shadow: none; cursor: not-allowed; }
 .submit-result { margin-top: 12px; padding: 11px 12px; border-radius: 10px; font-size: 9px; font-weight: 700; line-height: 1.45; }
 .submit-result.success { display: flex; flex-direction: column; gap: 7px; color: var(--green); background: #e8f3ed; border: 1px solid #cfe6db; }
 .submit-result.error { color: #a3341f; background: #fbe9e5; border: 1px solid #f1cec6; }
 .payment-link { color: var(--navy); font-weight: 800; text-decoration: underline; }
+.submit-amount { font-weight: 600; color: var(--navy); }
+/* La reserva no existe hasta que el cliente paga: hay que verlo, no leerlo de paso. */
+.submit-note { padding: 8px 10px; border-radius: 8px; color: #815922; background: #fdf4e6; border: 1px solid #f0dcbd; font-weight: 700; }
 .no-charge-badge { margin-left: 6px; padding: 2px 6px; border-radius: 999px; color: #95652d; background: #f6ecd9; font-size: 7px; font-weight: 800; font-style: normal; letter-spacing: .04em; text-transform: uppercase; }
 .field-hint { margin-top: 5px; color: #95652d; font-size: 8px; line-height: 1.4; }
 .send-action { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
@@ -290,7 +311,11 @@ button { cursor: pointer; }
   .combine-control p { grid-column: 1 / -1; grid-row: 2; }
   .send-bar { grid-template-columns: 35px 1fr; }
   .send-details { grid-column: 1 / -1; justify-content: space-between; padding: 10px 0; border-top: 1px solid var(--line); }
-  .send-button { grid-column: 1 / -1; }
+  /* El botón va envuelto en `.send-action`, así que el que tiene que ocupar
+     toda la fila es el contenedor; apuntando al botón la regla no hacía nada
+     y quedaba aplastado en la columna de 35px del logo. */
+  .send-action { grid-column: 1 / -1; }
+  .send-button { width: 100%; }
   .review-modal { padding: 21px 16px; }
   .review-header { grid-template-columns: 40px 1fr; }
   .safe-pill { grid-column: 2; width: fit-content; }

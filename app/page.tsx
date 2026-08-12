@@ -184,7 +184,18 @@ function toDisplayZones(live: FourvenuesZone[]): DisplayZone[] {
   });
 }
 
-function suggestedCombination(zoneTables: DisplayTable[], people: number, preferredTable?: string) {
+/**
+ * Una zona real de Fourvenues mezcla familias de mesas: PINAR contiene tanto
+ * las jaimas (J1-J4) como las mesas numéricas (201-224). Si el cliente pidió
+ * "Pinar" no se le puede colocar una jaima sin más, así que se prioriza la
+ * familia que pidió y solo se sale de ella si no cabe el grupo.
+ */
+function suggestedCombination(
+  zoneTables: DisplayTable[],
+  people: number,
+  preferredTable?: string,
+  spacePattern?: RegExp,
+) {
   const names = zoneTables.map((table) => table.name);
   const perTable = zoneTables[0]?.capacity || tableCapacity;
   const tablesNeeded = Math.max(1, Math.ceil(people / perTable));
@@ -192,7 +203,15 @@ function suggestedCombination(zoneTables: DisplayTable[], people: number, prefer
     zoneTables.find((table) => table.name === name)?.status !== "blocked";
 
   const preferredIndex = preferredTable ? names.indexOf(preferredTable) : -1;
-  const startIndexes = [preferredIndex, ...names.map((_, index) => index)]
+  const allIndexes = names.map((_, index) => index);
+  // Las que encajan con la familia pedida van primero; el resto, de reserva.
+  const byFamily = spacePattern
+    ? [
+        ...allIndexes.filter((index) => spacePattern.test(names[index])),
+        ...allIndexes.filter((index) => !spacePattern.test(names[index])),
+      ]
+    : allIndexes;
+  const startIndexes = [preferredIndex, ...byFamily]
     .filter((index, position, values) => index >= 0 && values.indexOf(index) === position);
 
   for (const startIndex of startIndexes) {
@@ -441,10 +460,18 @@ export default function Home() {
   const [liveEvents, setLiveEvents] = useState<FourvenuesEvent[] | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | undefined>();
   const [liveZones, setLiveZones] = useState<FourvenuesZone[] | null>(null);
+  // La zona tal y como la pidió el cliente ("pinar", "jaima"…). `draft.zone` se
+  // sobrescribe con el slug de la zona real, y ahí ya no se distingue si pidió
+  // jaima o mesa de pinar: las dos viven dentro de la zona PINAR.
+  const [requestedZoneKey, setRequestedZoneKey] = useState<string>(defaultDraft.zone);
   const [submit, setSubmit] = useState<{
     status: "idle" | "loading" | "success" | "error";
     message?: string;
     paymentUrl?: string;
+    /** Importe exacto que pedirá la pasarela, según la propia respuesta de la API. */
+    totalAmount?: number;
+    /** Aviso cuando el checkout aún no ha creado nada en el panel. */
+    note?: string;
   }>({ status: "idle" });
 
   useEffect(() => {
@@ -523,7 +550,12 @@ export default function Home() {
         setDraft((current) => (current.zone === key ? current : { ...current, zone: key }));
         setSelectedRateSlug(zoneRates(target)[0]?.slug);
         setSelectedTables(
-          suggestedCombination(toDisplayZones([target])[0].tables, draft.people),
+          suggestedCombination(
+            toDisplayZones([target])[0].tables,
+            draft.people,
+            undefined,
+            mapping?.spacePattern,
+          ),
         );
       })
       .catch(() => {
@@ -570,6 +602,8 @@ export default function Home() {
     displayZones.find((zone) => zone.key === draft.zone) ?? displayZones[0];
   const currentTables = currentZone?.tables ?? [];
   const isLive = Boolean(currentZone?.live);
+  /** Familia de mesas que encaja con lo que pidió el cliente (jaima vs. numérica). */
+  const requestedPattern = ZONE_MAPPINGS[requestedZoneKey]?.spacePattern;
 
   const statusOf = (table: string): TableStatus =>
     currentTables.find((item) => item.name === table)?.status ?? "available";
@@ -608,7 +642,9 @@ export default function Home() {
   // Con tarifa real, el importe lo calcula Fourvenues (precio + suplementos).
   const livePricing = activeRate ? priceForRate(activeRate, draft.people) : null;
   const price = livePricing?.price ?? simulatedPrice;
-  const deposit = livePricing?.deposit ?? Math.round(price / 2);
+  // Lo que cobra el enlace ahora; el resto se liquida en puerta.
+  const chargeNow = livePricing?.chargeNow ?? Math.round(price / 2);
+  const pendingAtDoor = livePricing?.pendingAtDoor ?? Math.max(0, price - chargeNow);
   const maxCapacity = draft.bottles * 4;
   // Sin botellas ("a copas") no aplica el máximo de personas por botella.
   const bottleCapacityOk = Boolean(draft.bottlesNote) || draft.people <= maxCapacity;
@@ -660,19 +696,19 @@ export default function Home() {
     setSelectedRateSlug(nextZone?.rates?.[0]?.slug);
     const perTable = nextZone?.tables[0]?.capacity ?? tableCapacity;
     setCombineMode(draft.people > perTable);
-    setSelectedTables(suggestedCombination(nextZone?.tables ?? [], draft.people));
+    setSelectedTables(suggestedCombination(nextZone?.tables ?? [], draft.people, undefined, requestedPattern));
   }
 
   function updatePeople(people: number) {
     updateDraft("people", people);
     setCombineMode(people > perTableCapacity);
-    setSelectedTables(suggestedCombination(currentTables, people, selectedTables[0]));
+    setSelectedTables(suggestedCombination(currentTables, people, selectedTables[0], requestedPattern));
   }
 
   function toggleCombineMode() {
     const nextMode = !combineMode;
     setCombineMode(nextMode);
-    if (nextMode) setSelectedTables(suggestedCombination(currentTables, draft.people, selectedTables[0]));
+    if (nextMode) setSelectedTables(suggestedCombination(currentTables, draft.people, selectedTables[0], requestedPattern));
     else setSelectedTables(selectedTables.slice(0, 1));
   }
 
@@ -719,10 +755,18 @@ export default function Home() {
     const perTable = zone?.tables[0]?.capacity ?? tableCapacity;
 
     setDraft({ ...result.draft, zone: zoneKey });
+    setRequestedZoneKey(result.draft.zone);
     setDetectedFields(result.detected);
     setSelectedRateSlug(zone?.rates?.[0]?.slug);
     setCombineMode(forceCombine || result.draft.people > perTable);
-    setSelectedTables(suggestedCombination(zone?.tables ?? [], result.draft.people));
+    setSelectedTables(
+      suggestedCombination(
+        zone?.tables ?? [],
+        result.draft.people,
+        undefined,
+        ZONE_MAPPINGS[result.draft.zone]?.spacePattern,
+      ),
+    );
     setParsed(true);
   }
 
@@ -804,10 +848,16 @@ export default function Home() {
         if (!result.success || !result.data) {
           throw new Error(describeApiError(result, "No se pudo crear el checkout."));
         }
+        // Ojo: el checkout NO crea todavía la mesa en Fourvenues. Comprobado en
+        // el panel: tras generar el enlace, el evento seguía con "0 reservas"
+        // incluso en el filtro de pendientes. La reserva nace cuando el cliente
+        // paga, así que el RRPP tiene que enviar el enlace sí o sí.
         setSubmit({
           status: "success",
-          message: "Reserva creada. Enlace de pago listo para enviar al cliente.",
+          message: "Enlace de pago generado. Envíaselo al cliente.",
           paymentUrl: result.data.payment_url,
+          totalAmount: result.data.total_amount,
+          note: "La mesa aún NO está en Fourvenues: aparecerá en el panel cuando el cliente pague. Si no paga, no hay reserva.",
         });
       }
     } catch (error) {
@@ -998,7 +1048,7 @@ export default function Home() {
                 <span>⇄</span> Combinar mesas
               </button>
               <p>{draft.people > perTableCapacity ? `${draft.people} personas requieren al menos ${tablesNeeded} mesas contiguas.` : combineMode ? "Selecciona una mesa vecina para añadirla a la combinación." : "Actívalo para reservar varias mesas contiguas juntas."}</p>
-              {combineMode && <button type="button" className="suggest-button" onClick={() => setSelectedTables(suggestedCombination(currentTables, draft.people, selectedTables[0]))}>Aplicar sugerencia</button>}
+              {combineMode && <button type="button" className="suggest-button" onClick={() => setSelectedTables(suggestedCombination(currentTables, draft.people, selectedTables[0], requestedPattern))}>Aplicar sugerencia</button>}
             </div>
             <div className="table-grid">
               {currentTables.map((table) => {
@@ -1014,10 +1064,10 @@ export default function Home() {
               <div className="summary-stats">
                 <div><span>Personas</span><b>{draft.people}</b></div>
                 <div><span>Capacidad mesas</span><b>{selectedTableCapacity} pax</b></div>
-                <div><span>{isLive ? "Precio (tarifa real)" : "Precio estimado"}</span><b>{price} €</b></div>
-                <div><span>Adelanto</span><b>{deposit} €</b></div>
+                <div><span>{isLive ? "Precio total (tarifa real)" : "Precio estimado"}</span><b>{price} €</b></div>
+                <div><span>Cobra el enlace</span><b>{chargeNow} €</b></div>
               </div>
-              {isLive && activeRate && <p className="rate-note">Tarifa <b>{activeRate.name}</b>: {activeRate.price} € con {activeRate.included_persons} personas incluidas{activeRate.supplement_price ? ` · +${activeRate.supplement_price} € por persona extra` : ""}. El importe final lo confirma el local en puerta.</p>}
+              {isLive && activeRate && <p className="rate-note">Tarifa <b>{activeRate.name}</b>: {activeRate.price} € con {activeRate.included_persons} personas incluidas{activeRate.supplement_price ? ` · +${activeRate.supplement_price} € por persona extra` : ""}. El enlace cobra {chargeNow} €{activeRate.fee_quantity ? ` (incluye ${activeRate.fee_quantity}% de gestión)` : ""}{pendingAtDoor > 0 ? `; los ${pendingAtDoor} € restantes se pagan en puerta` : ""}.</p>}
               {!tablesCapacityOk && <p className="warning">Faltan mesas: selecciona {tablesNeeded} mesas contiguas para alojar a {draft.people} personas.</p>}
               {!bottleCapacityOk && <p className="warning">Se permiten hasta {maxCapacity} personas con {draft.bottles} botella{draft.bottles === 1 ? "" : "s"}. Revisa personas o botellas.</p>}
               {isConcert && <p className="concert-note">La reserva de botella no incluye la entrada del concierto.</p>}
@@ -1042,17 +1092,17 @@ export default function Home() {
             <button className="modal-close" onClick={() => setReviewOpen(false)} aria-label="Cerrar">×</button>
             <div className="review-header">
               <span className="review-icon">◎</span>
-              <div><p className="eyebrow">Simulación de la API</p><h2 id="review-title">Reserva lista para crear</h2></div>
-              <span className="safe-pill">No enviada</span>
+              <div><p className="eyebrow">{canSubmitLive ? "Fourvenues · TØTEM Punta Umbría" : "Conector desactivado"}</p><h2 id="review-title">{submit.status === "success" ? "Reserva enviada" : "Reserva lista para crear"}</h2></div>
+              <span className={submit.status === "success" ? "safe-pill sent" : "safe-pill"}>{submit.status === "success" ? "Enviada" : "No enviada"}</span>
             </div>
 
             <div className="check-list" aria-label="Comprobaciones realizadas">
               <div><span>✓</span><p><b>Solicitud validada</b><small>{detectedFields} campos reconocidos y editables</small></p></div>
               <div><span>✓</span><p><b>Evento localizado</b><small>{draft.date} · {eventName}</small></p></div>
-              <div><span>✓</span><p><b>Zona y tarifa comprobadas</b><small>{currentZone?.label} · {price} € · adelanto {deposit} €</small></p></div>
+              <div><span>✓</span><p><b>Zona y tarifa comprobadas</b><small>{currentZone?.label} · {price} € en total · el enlace cobra {chargeNow} €</small></p></div>
               <div><span>✓</span><p><b>{selectedTables.length > 1 ? "Mesas combinadas preparadas" : "Mesa compatible preparada"}</b><small>{selectedTables.length > 1 ? `Mesas ${selectedTablesLabel}` : `Mesa ${selectedTablesLabel}`} · {combinationUsesInternal ? "incluye venta interna RRPP" : "venta pública"} · {draft.people} personas</small></p></div>
               {canSubmitLive ? (
-                <div><span>✓</span><p><b>Conector Fourvenues activo</b><small>{needsReview ? "Se enviará como SOLICITUD: queda \"A revisar\" y el local ajusta el importe." : "Se creará la reserva con enlace de pago (checkout)."}</small></p></div>
+                <div><span>✓</span><p><b>Conector Fourvenues activo</b><small>{needsReview ? "Se enviará como SOLICITUD: queda \"A revisar\" y el local ajusta el importe." : `Se generará un enlace de pago de ${chargeNow} €. La mesa entra en Fourvenues cuando el cliente pague.`}</small></p></div>
               ) : (
                 <div className="pending"><span>5</span><p><b>{noLiveEvent ? "Sin evento para esa fecha" : "Conector pendiente"}</b><small>{noLiveEvent ? "Elige una fecha con evento para poder crear la reserva." : "Al configurar la API key, este paso creará el booking en Fourvenues."}</small></p></div>
               )}
@@ -1065,7 +1115,7 @@ export default function Home() {
                 <p><span>Llegada</span><b>{draft.arrival || "Sin hora"}</b></p>
                 <p><span>Ubicación</span><b>{currentZone?.label} · {selectedTables.length > 1 ? "Mesas" : "Mesa"} {selectedTablesLabel}</b></p>
                 <p><span>Personas / botellas</span><b>{draft.people} / {draft.bottlesNote || draft.bottles}</b></p>
-                <p><span>Precio / adelanto</span><b>{price} € / {deposit} €</b></p>
+                <p><span>Total / cobra el enlace</span><b>{price} € / {chargeNow} €</b></p>
                 <p><span>Referente</span><b>{draft.referral}</b></p>
               </div>
               {draft.observations && <div className="receipt-observations"><span>Observaciones internas</span><b>{draft.observations}</b></div>}
@@ -1079,6 +1129,10 @@ export default function Home() {
             {submit.status === "success" ? (
               <div className="submit-result success">
                 <b>✓ {submit.message}</b>
+                {submit.totalAmount != null && (
+                  <p className="submit-amount">La pasarela pedirá <b>{submit.totalAmount} €</b>. El resto se cobra en puerta.</p>
+                )}
+                {submit.note && <p className="submit-note">{submit.note}</p>}
                 {submit.paymentUrl && (
                   <a className="payment-link" href={submit.paymentUrl} target="_blank" rel="noopener noreferrer">Abrir enlace de pago →</a>
                 )}
@@ -1099,7 +1153,7 @@ export default function Home() {
                         ? "Solicitar reserva sin cobro"
                         : "Crear reserva y generar enlace de pago"}
                 </button>
-                <p className="duplicate-note">{needsReview ? "Irá como solicitud: el local la confirma y ajusta el importe desde el panel." : "Se generará un enlace de pago para enviar al cliente."}</p>
+                <p className="duplicate-note">{needsReview ? "Irá como solicitud: el local la confirma y ajusta el importe desde el panel." : "Genera el enlace de pago; la reserva no existe hasta que el cliente paga."}</p>
               </>
             ) : (
               <>

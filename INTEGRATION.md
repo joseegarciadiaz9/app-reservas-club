@@ -127,6 +127,31 @@ modo `request` con el aviso en las notas, para que el local pulse "Invitación".
 3. `POST /bookings/checkout` (o `/request`) con la zona, tarifa, mesa e info del cliente.
 4. Fourvenues devuelve `payment_url` (checkout) y gestiona pago, confirmación y QR.
 
+### El checkout NO crea la reserva (verificado en producción, 12-ago-2026)
+
+Se generó un checkout real (26/08/2026, PINAR, mesa 205, 6 personas) y **el panel
+siguió marcando "0 reservas"**, también en el filtro "Pendientes de revisión o de
+pago". La mesa nace **cuando el cliente paga**. Consecuencias:
+
+- El RRPP **tiene que enviar el enlace**: si no lo manda, no hay reserva en ningún sitio.
+- No sirve de nada buscar la reserva en el panel justo después de crearla.
+- Un enlace sin pagar no bloquea la mesa.
+
+### Cuánto cobra realmente el enlace
+
+Para la tarifa "PRECIO EMBARCADERO" (`price` 80, `included_persons` 3,
+`supplement_price` 15, `fee_quantity` 5 %, `deposit` 50 %, `full_payment` true)
+con 6 personas, la pasarela pidió **84 €**, que no es ni el total (125 €) ni el
+50 % de adelanto (63 €). La regla que se deduce:
+
+- Se cobra sobre el **precio base** de la tarifa; los suplementos por persona
+  extra se liquidan **en puerta**, no en el enlace.
+- Con `full_payment: true` se cobra el 100 % de esa base, no el `deposit`.
+- Encima se suma la comisión (`fee_type` / `fee_quantity`).
+
+Está implementado en `priceForRate()` y fijado con tests en
+`tests/pricing.test.mjs` usando estos mismos números.
+
 ## Estructura REAL de zonas y tarifas en TØTEM
 
 Verificado en el panel de **producción** de TØTEM Punta Umbría (10-ago-2026)
