@@ -672,7 +672,16 @@ export default function Home() {
   // "A copas" vale como respuesta: no todas las reservas llevan botella.
   if (!draft.bottles && !draft.bottlesNote) blockers.push("faltan las botellas");
   if (!emailOk) blockers.push("el correo no es válido");
-  if (!tablesCapacityOk) blockers.push(`selecciona ${tablesNeeded} mesas para ${draft.people} personas`);
+  // Cuando el local cierra la venta online de una zona para un evento (típico en
+  // conciertos), Fourvenues la devuelve sin mesas vendibles y rechaza la reserva
+  // con "This zone has reached its booking limit". Pedir "selecciona 2 mesas" en
+  // ese caso manda al RRPP a buscar algo que no existe.
+  const zoneClosed = isLive && sellableCount === 0;
+  if (zoneClosed) {
+    blockers.push(`Fourvenues no tiene mesas a la venta en ${currentZone?.label} para este evento`);
+  } else if (!tablesCapacityOk) {
+    blockers.push(`selecciona ${tablesNeeded} mesas para ${draft.people} personas`);
+  }
   if (!bottleCapacityOk) blockers.push(`con ${draft.bottles} botellas caben ${maxCapacity} personas`);
   if (noLiveEvent) blockers.push("no hay evento ese día");
   const requiredFieldsOk = blockers.length === 0;
@@ -1057,7 +1066,11 @@ export default function Home() {
                 <div><span>Adelanto</span><b>{chargeNow} €</b></div>
               </div>
               {isLive && activeRate && <p className="rate-note">Tarifa <b>{activeRate.name}</b>: {activeRate.price} € con {activeRate.included_persons} personas incluidas{activeRate.supplement_price ? ` · +${activeRate.supplement_price} € por persona extra` : ""}. Adelanto {chargeNow} €{activeRate.fee_quantity ? ` (incluye ${activeRate.fee_quantity}% de gestión)` : ""}{pendingAtDoor > 0 ? `; los ${pendingAtDoor} € restantes se pagan en puerta` : ""}.</p>}
-              {!tablesCapacityOk && <p className="warning">Faltan mesas: selecciona {tablesNeeded} mesas contiguas para alojar a {draft.people} personas.</p>}
+              {zoneClosed ? (
+                <p className="warning">Fourvenues no ofrece ninguna mesa de {currentZone?.label} para este evento: el local tiene cerrada la venta online de esta zona. Aunque en el panel se vean mesas libres, la API responde &quot;This zone has reached its booking limit&quot;. Esta reserva hay que crearla desde Fourvenues.</p>
+              ) : !tablesCapacityOk ? (
+                <p className="warning">Faltan mesas: selecciona {tablesNeeded} mesas contiguas para alojar a {draft.people} personas.</p>
+              ) : null}
               {!bottleCapacityOk && <p className="warning">Se permiten hasta {maxCapacity} personas con {draft.bottles} botella{draft.bottles === 1 ? "" : "s"}. Revisa personas o botellas.</p>}
               {isConcert && <p className="concert-note">La reserva de botella no incluye la entrada del concierto.</p>}
             </div>
