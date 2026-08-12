@@ -22,6 +22,7 @@ import {
   zoneRates,
   ZONE_MAPPINGS,
 } from "./lib/booking-payload";
+import { looseFields } from "./lib/free-text";
 import type { FourvenuesEvent, FourvenuesRate, FourvenuesZone } from "./lib/fourvenues";
 
 type Zone = "pinar" | "pista" | "jaima" | "lateral" | "front";
@@ -339,15 +340,29 @@ function zoneFrom(value: string): Zone {
 }
 
 function parseRequest(text: string, previous: BookingDraft) {
-  const date = valueFrom(text, ["Fecha"]);
-  const fullName = valueFrom(text, ["(?:Un )?nombre y apellidos", "Nombre"]);
-  const people = valueFrom(text, ["N[º°o]?\\.? de personas", "Personas"]);
-  const phone = valueFrom(text, ["Tel[eé]fono"]);
+  // Muchas solicitudes no llegan con el formulario, sino en cuatro líneas
+  // sueltas por WhatsApp. Lo que no traiga etiqueta se intenta deducir del
+  // texto libre, pero la etiqueta siempre manda si existe.
+  const suelto = looseFields(text);
+  const orLoose = (labelled: string, loose: string) => labelled || loose;
+
+  const date = orLoose(valueFrom(text, ["Fecha"]), suelto.date);
+  const fullName = orLoose(
+    valueFrom(text, ["(?:Un )?nombre y apellidos", "Nombre"]),
+    suelto.fullName,
+  );
+  const people = orLoose(valueFrom(text, ["N[º°o]?\\.? de personas", "Personas"]), suelto.people);
+  const phone = orLoose(valueFrom(text, ["Tel[eé]fono"]), suelto.phone);
   const email = valueFrom(text, ["Correo electr[oó]nico", "Email"]);
-  const preferredZone = valueFrom(text, ["Zona preferida", "Zona"]);
-  const arrival = valueFrom(text, ["Hora de llegada", "Llegada"]);
-  const bottles = valueFrom(text, ["N[º°o]?\\.? de botellas", "Botellas"]);
-  const observations = valueFrom(text, ["Observaciones", "Notas"]);
+  const preferredZone = orLoose(valueFrom(text, ["Zona preferida", "Zona"]), suelto.zone);
+  const arrival = orLoose(valueFrom(text, ["Hora de llegada", "Llegada"]), suelto.arrival);
+  const bottles = orLoose(valueFrom(text, ["N[º°o]?\\.? de botellas", "Botellas"]), suelto.bottles);
+  const observations = orLoose(
+    valueFrom(text, ["Observaciones", "Notas"]),
+    // Solo se usan las sobras como observación si el mensaje venía sin
+    // etiquetas; en un formulario, lo no reconocido son las propias etiquetas.
+    valueFrom(text, ["Fecha"]) ? "" : suelto.observations,
+  );
   const referral = valueFrom(text, ["Referente", "RRPP"]);
 
   const detected = [date, fullName, people, phone, email, preferredZone, arrival, bottles]
