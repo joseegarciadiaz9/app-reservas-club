@@ -207,19 +207,36 @@ function suggestedCombination(zoneTables: DisplayTable[], people: number, prefer
 function valueFrom(text: string, labels: string[]) {
   const clean = text.replace(/\*/g, "");
   for (const label of labels) {
-    const expression = new RegExp(`(?:^|\\n)\\s*${label}\\s*:\\s*([^\\n]+)`, "i");
+    // `[^\S\n]*` = espacios y tabuladores, pero NO saltos de línea. Con `\s*` un
+    // campo vacío se comía la línea siguiente: "Observaciones:" sin nada detrás
+    // capturaba la instrucción de abajo, y "Correo electrónico:" vacío se quedaba
+    // con "Zona preferida: …", que Fourvenues rechazaba por email no válido.
+    const expression = new RegExp(`(?:^|\\n)[^\\S\\n]*${label}[^\\S\\n]*:[^\\S\\n]*([^\\n]+)`, "i");
     const match = clean.match(expression);
     if (match?.[1]) return match[1].trim();
   }
   return "";
 }
 
+/**
+ * Acepta la fecha aunque venga con texto alrededor ("sabado 15/08/26") y con
+ * cualquier separador. Los clientes no escriben la fecha sola.
+ */
 function normalizeDate(value: string) {
-  const parts = value.trim().split(/[./-]/).map(Number);
-  if (parts.length !== 3 || parts.some(Number.isNaN)) return value.trim();
-  const [day, month, shortYear] = parts;
-  const year = shortYear < 100 ? 2000 + shortYear : shortYear;
-  return `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}/${year}`;
+  const match = value.match(/(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*(\d{2,4})/);
+  if (!match) return value.trim();
+  const [, day, month, rawYear] = match;
+  const year = Number(rawYear) < 100 ? 2000 + Number(rawYear) : Number(rawYear);
+  return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`;
+}
+
+/** Hora de llegada escrita como sea: "00.00", "18h30", "18:00", "20 h". */
+function normalizeTime(value: string): string {
+  const match = value.match(/([0-2]?\d)\s*[:.hH]\s*([0-5]\d)/);
+  if (match) return `${match[1].padStart(2, "0")}:${match[2]}`;
+  // "20h" o "20" a secas: hora en punto.
+  const hourOnly = value.match(/\b([0-2]?\d)\s*h?\b/);
+  return hourOnly ? `${hourOnly[1].padStart(2, "0")}:00` : "";
 }
 
 function zoneFrom(value: string): Zone {
@@ -254,7 +271,7 @@ function parseRequest(text: string, previous: BookingDraft) {
       phone: phone || previous.phone,
       email: email || previous.email,
       zone: preferredZone ? zoneFrom(preferredZone) : previous.zone,
-      arrival: arrival.match(/[0-2]?\d:\d{2}/)?.[0] || previous.arrival,
+      arrival: normalizeTime(arrival) || previous.arrival,
       bottles: bottles ? Number(bottles.match(/\d+/)?.[0]) || previous.bottles : previous.bottles,
       // "A copas", "sin botella"… no son un número: se conserva el texto tal cual
       // en vez de perderlo, y sirve para detectar que la revisa el local.

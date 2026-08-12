@@ -21,11 +21,14 @@ Rellena este mensaje y envíamelo tal cual, sin borrar los títulos 🙏
 *Nº de botellas:*
 *Observaciones:*
 
-ℹ️ El correo es obligatorio: sin un correo válido no se puede emitir la reserva.
-ℹ️ Zona: Pinar, Pista, Jaimas… o escribe "la que haya".
-ℹ️ Botellas: pon un número, o "A copas" si es mesa sin botella.
+ℹ️ Hace falta un correo válido para poder emitir la reserva.
+ℹ️ Para la zona puedes poner Pinar, Pista, Jaimas… o "la que haya".
+ℹ️ En botellas, un número; o "A copas" si es mesa sin botella.
 ℹ️ La hora de llegada afecta al precio final (se ajusta en puerta).
 ```
+
+> Las líneas de ayuda evitan a propósito escribir "Zona:" o "Botellas:", porque
+> son las mismas etiquetas que lee la app y podría confundirlas con los campos.
 
 ## 2. Ejemplo relleno
 

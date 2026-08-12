@@ -1,7 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "totem-reservas",
-  "compatibility_date": "2026-08-11",
+  // La que traía el proyecto. El deploy la puso en la fecha de hoy y el runtime
+  // de desarrollo (miniflare) no llega tan lejos, así que no arrancaba en local.
+  "compatibility_date": "2026-05-15",
   "compatibility_flags": [
     "nodejs_compat"
   ],
