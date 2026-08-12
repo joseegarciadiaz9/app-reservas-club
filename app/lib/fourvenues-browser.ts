@@ -39,9 +39,10 @@ export function getIntegrationStatus(): Promise<ApiResult<IntegrationStatus>> {
   return call<IntegrationStatus>("/api/fourvenues/status");
 }
 
-/** Eventos de una fecha (YYYY-MM-DD). */
-export function fetchEvents(dateIso: string): Promise<ApiResult<FourvenuesEvent[]>> {
-  return call<FourvenuesEvent[]>(`/api/fourvenues/events?date=${encodeURIComponent(dateIso)}`);
+/** Eventos de una fecha (YYYY-MM-DD); sin fecha, la agenda completa. */
+export function fetchEvents(dateIso?: string): Promise<ApiResult<FourvenuesEvent[]>> {
+  const query = dateIso ? `?date=${encodeURIComponent(dateIso)}` : "";
+  return call<FourvenuesEvent[]>(`/api/fourvenues/events${query}`);
 }
 
 /** Zonas + mesas + tarifas + disponibilidad de un evento. */

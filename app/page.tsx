@@ -320,6 +320,24 @@ function describeApiError(result: { error?: string; details?: unknown }, fallbac
   return result.error || fallback;
 }
 
+/**
+ * Día del evento en hora del local, como "DD/MM/YYYY". Se compara con la fecha
+ * del formulario, así que tiene que ser la fecha de Punta Umbría y no la UTC.
+ */
+function localDayOf(iso: string | undefined): string {
+  if (!iso) return "";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const partes = new Intl.DateTimeFormat("es-ES", {
+    timeZone: "Europe/Madrid",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(parsed);
+  const buscar = (tipo: string) => partes.find((p) => p.type === tipo)?.value ?? "";
+  return `${buscar("day")}/${buscar("month")}/${buscar("year")}`;
+}
+
 const monthNames = ["ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC"];
 
 /** "15/08/2026" → "AGO" (antes solo contemplaba julio y agosto). */
@@ -368,29 +386,34 @@ export default function Home() {
     };
   }, []);
 
-  // Solo cuando hay API key: carga los eventos de esa fecha. Normalmente hay uno,
-  // pero puede haber varios (p. ej. un tardeo y la noche) y entonces el RRPP
-  // elige en el desplegable de la cabecera.
+  // Con API key, la agenda completa de TØTEM se carga una sola vez: así el
+  // desplegable de la cabecera los lista todos y el RRPP puede elegir sin tener
+  // que acertar la fecha. Se pide en vivo, así que los eventos nuevos salen solos.
   useEffect(() => {
-    if (!integration?.configured || !draft.date) return;
+    if (!integration?.configured) return;
     let active = true;
-    setLiveEvents(null);
-    setSelectedEventId(undefined);
-    setLiveZones(null);
-    fetchEvents(toIsoDate(draft.date))
+    fetchEvents()
       .then((result) => {
         if (!active) return;
-        const found = result.success ? result.data ?? [] : [];
-        setLiveEvents(found);
-        setSelectedEventId(found[0]?._id);
+        const agenda = (result.success ? result.data ?? [] : [])
+          .slice()
+          .sort((a, b) => (a.start_date ?? "").localeCompare(b.start_date ?? ""));
+        setLiveEvents(agenda);
       })
       .catch(() => {
-        /* Un fallo cargando datos reales no debe romper la pantalla. */
+        /* Un fallo cargando la agenda no debe romper la pantalla. */
       });
     return () => {
       active = false;
     };
-  }, [integration?.configured, draft.date]);
+  }, [integration?.configured]);
+
+  // La fecha del formulario manda: selecciona el evento de ese día si existe.
+  useEffect(() => {
+    if (!liveEvents?.length || !draft.date) return;
+    const match = liveEvents.find((event) => localDayOf(event.start_date) === draft.date);
+    setSelectedEventId((current) => (match ? match._id : current ? undefined : current));
+  }, [liveEvents, draft.date]);
 
   // Zonas reales del evento seleccionado (cambia al elegir otro en la cabecera).
   useEffect(() => {
@@ -519,6 +542,17 @@ export default function Home() {
 
   function updateDraft<K extends keyof BookingDraft>(key: K, value: BookingDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  /**
+   * Elegir evento en la cabecera fija también la fecha del formulario, para que
+   * no queden contradiciéndose (y para que el resto de la pantalla cuadre).
+   */
+  function chooseEvent(eventId: string) {
+    setSelectedEventId(eventId || undefined);
+    const elegido = liveEvents?.find((event) => event._id === eventId);
+    const dia = localDayOf(elegido?.start_date);
+    if (dia) updateDraft("date", dia);
   }
 
   function chooseZone(nextZoneKey: string) {
@@ -740,16 +774,19 @@ export default function Home() {
           <div className="event-chip">
             <span className="event-date">{draft.date ? <><b>{draft.date.slice(0, 2)}</b>{monthLabel(draft.date)}</> : <b>·</b>}</span>
             <span>
-              <small>{eventPickerOptions.length > 1 ? `${eventPickerOptions.length} eventos ese día` : "Evento localizado"}</small>
+              <small>{eventPickerOptions.length > 0 ? "Elige el evento" : "Evento localizado"}</small>
               {eventPickerOptions.length > 0 ? (
                 <select
                   className="event-select"
                   aria-label="Evento de Fourvenues"
                   value={selectedEventId ?? ""}
-                  onChange={(event) => setSelectedEventId(event.target.value)}
+                  onChange={(event) => chooseEvent(event.target.value)}
                 >
+                  <option value="">— Sin elegir —</option>
                   {eventPickerOptions.map((option) => (
-                    <option key={option._id} value={option._id}>{option.name}</option>
+                    <option key={option._id} value={option._id}>
+                      {localDayOf(option.start_date).slice(0, 5)} · {option.name}
+                    </option>
                   ))}
                 </select>
               ) : (
