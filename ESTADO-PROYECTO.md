@@ -174,18 +174,55 @@ Dos límites reales de producción:
 - La zona **PISTA (CONCIERTO)** (tarifas LATERAL ESCENARIO y FRONT STAGE) no se
   devuelve porque en el panel está marcada como *Zona completa*.
 
-## Próximos pasos
+## Cierre de temporada 2026 (01-sep-2026)
 
-1. ✅ Admin conseguido y **clave Channel Manager solicitada** en Alpha (`all:read`/`all:write`).
-2. ⏳ **Esperar aprobación de Fourvenues** (estado "Solicitada" → activa). Opcional: escribir a
-   Inacio para pedir que la aprueben cuanto antes.
-3. Cuando la clave esté activa, copiar su valor a `FOURVENUES_API_KEY` en `.env` /
-   secret del Worker y `FOURVENUES_ENV=alpha`; la UI mostrará "Conectado a Fourvenues (Alpha)".
-4. Sustituir zonas/mesas/precios hardcodeados de `app/page.tsx` por datos reales de `GET /bookings/zones`.
-5. Enganchar el botón de crear reserva a `createCheckout` / `requestBooking`. Para reservas
-   "no cobrar / 0 €": adjuntar las notas del RRPP a `observations_client` y usar el flujo
-   **`request`** (lo confirma el venue), así se omiten las dudas de precio con Fourvenues.
-6. Validar end-to-end en Alpha; luego pedir claves de producción y **acotar los permisos**.
-7. ✅ **Control de acceso hecho** (`worker/access.ts`): contraseña + cookie firmada,
-   cubre páginas y `/api/*`, con fail-closed si hay clave y no hay contraseña.
-   Al desplegar: `wrangler secret put FOURVENUES_API_KEY` **y** `APP_ACCESS_PASSWORD`.
+La temporada terminó el **29 de agosto**. La app quedó **desplegada y en uso** en
+https://totem-reservas.joseegarciadiaz9.workers.dev, con la clave de producción
+de TØTEM Punta Umbría.
+
+### Lo que hace hoy
+
+- Lee el formulario del cliente **y también los mensajes sueltos de WhatsApp**
+  ("Juanma Márquez / Jueves 13 / 15 pax / +34 627 57 43 11"), sin etiquetas.
+- Localiza el evento del día contra la agenda real y trae zonas, mesas y tarifas.
+- Calcula el precio como lo calcula Fourvenues (ver INTEGRATION.md) y crea la
+  reserva con `POST /bookings/request`: entra al momento como **"A revisar"**.
+- La mesa elegida, la hora de llegada, las botellas y el RRPP van en las notas.
+
+### Lo único que queda pendiente, y por qué se decidió esperar
+
+Dos limitaciones, **con la misma causa**: al publicar TØTEM sus propios eventos,
+la clave de Channel Manager entra con el permiso de **"Clientes"**.
+
+1. No se puede fijar la mesa (`table_id` → 400 con `can_select_client: false`).
+2. No se ve el aforo interno: si el local cierra la venta online de una zona, la
+   API la da por llena (`This zone has reached its booking limit`).
+
+Inacio Baldovino confirmó por correo (31-ago-2026) que **sí hay solución hoy**:
+crear una segunda organización como **colaborador profesional**, compartirle los
+eventos y usar su clave. El flag está en los permisos de la zona, en el apartado
+de quién puede reservarla, y la aprobación de la clave es inmediata.
+
+Se descartó **por coste, no por técnica**:
+
+- La organización colaboradora **necesita su propia cuenta Fourvenues Pro activa**,
+  y obliga a gestionar dos organizaciones de forma permanente.
+- La temporada ya había cerrado, así que no había nada que ganar este año.
+- **Dato importante que sí quedó confirmado**: las comisiones van asociadas a la
+  organización **dueña del evento**, así que TØTEM no perdería el cobro ni el
+  control de las retiradas. El riesgo económico estaba descartado.
+
+El propio Inacio recomendó esperar: **Fourvenues está trabajando en una mejora que
+resolverá este caso sin necesidad de una segunda organización.**
+
+### Al retomar (temporada 2027)
+
+1. Preguntar a Inacio si la mejora ya está disponible. Si lo está, no hace falta
+   la segunda organización: solo activar el flag en los permisos de zona.
+2. Si no lo está y compensa, montar la organización colaboradora (aprobación
+   inmediata) asumiendo la cuenta Pro extra.
+3. Revisar que la clave de producción no haya caducado y que la contraseña de
+   acceso (`APP_ACCESS_PASSWORD`) siga siendo la que usan los RRPP.
+4. Con cualquiera de las dos vías, activar el envío de `table_id` en
+   `placementForZone()`: el código ya lo contempla, solo estaba desactivado
+   porque la API lo rechazaba.
